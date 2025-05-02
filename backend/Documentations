@@ -1,0 +1,14 @@
+Package	Purpose	What It Does
+express 	Web framework for Node.js	Helps build APIs and handle HTTP requests and responses easily.
+
+mongoose	ODM (Object Data Modeling) library for MongoDB	Provides schema-based solutions to model MongoDB data and makes CRUD operations easier.
+
+dotenv	   Environment variable loader	Loads environment variables from a .env file into process.env, useful for secrets (e.g., DB URI).
+
+cors	  Cross-Origin Resource Sharing middleware	Allows your frontend (e.g., React on localhost:3000) to make requests to your backend (e.g., 5000).
+
+multer	  Middleware for handling multipart/form-data (file uploads)	Enables handling image/file uploads in requests (e.g., profile images, issue attachments).
+
+jsonwebtoken	Library for creating and verifying JWTs (JSON Web Tokens)	Used for implementing authentication — sign, verify, and decode tokens.
+
+bcryptjs	Library for hashing passwords	Used to hash and compare passwords securely during login and registration.
