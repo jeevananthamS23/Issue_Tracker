@@ -1,0 +1,121 @@
+/* AuthPage.css - Import this in your AuthPage.js component */
+
+.auth-container {
+    max-width: 400px;
+    margin: 40px auto;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    background-color: #fff;
+  }
+  
+  .auth-tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  
+  .tab {
+    flex: 1;
+    padding: 10px;
+    background: none;
+    border: none;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.3s ease;
+  }
+  
+  .tab.active {
+    color: #3f51b5;
+    border-bottom: 2px solid #3f51b5;
+  }
+  
+  .user-type-toggle {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 15px;
+  }
+  
+  .user-type-toggle label {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    color: #555;
+    cursor: pointer;
+  }
+  
+  .user-type-toggle input {
+    margin-right: 6px;
+  }
+  
+  form h2 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+  }
+  
+  .form-group {
+    margin-bottom: 15px;
+  }
+  
+  input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    transition: border-color 0.3s;
+  }
+  
+  input:focus {
+    border-color: #3f51b5;
+    outline: none;
+  }
+  
+  .submit-btn {
+    width: 100%;
+    padding: 12px;
+    background-color: #3f51b5;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .submit-btn:hover {
+    background-color: #303f9f;
+  }
+  
+  .message {
+    text-align: center;
+    margin-top: 15px;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #555;
+  }
+  
+  .toggle-prompt {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 14px;
+    color: #666;
+  }
+  
+  .toggle-btn {
+    background: none;
+    border: none;
+    color: #3f51b5;
+    cursor: pointer;
+    font-weight: 500;
+    padding: 0;
+    font-size: 14px;
+  }
+  
+  .toggle-btn:hover {
+    text-decoration: underline;
+  }
