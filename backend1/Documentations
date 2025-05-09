@@ -12,3 +12,15 @@ multer	  Middleware for handling multipart/form-data (file uploads)	Enables hand
 jsonwebtoken	Library for creating and verifying JWTs (JSON Web Tokens)	Used for implementing authentication — sign, verify, and decode tokens.
 
 bcryptjs	Library for hashing passwords	Used to hash and compare passwords securely during login and registration.
+
+one-liner for each HTTP method:
+
+GET – Retrieve data from the server (read-only).
+
+POST – Create a new resource on the server.
+
+PUT – Replace an existing resource entirely.
+
+PATCH – Update part of an existing resource.
+
+DELETE – Remove a resource from the server.

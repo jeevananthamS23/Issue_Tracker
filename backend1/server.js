@@ -6,7 +6,7 @@ const cors = require("cors");
 const userRoutes = require("./routes/userAuth.routes");
 const adminRoutes = require("./routes/adminAuth.routes");
 const issueRoutes = require("./routes/issue.routes");
-
+const adminDashboardRoutes = require("./routes/adminDashboard.routes");
 
 
 const app = express();
@@ -23,6 +23,9 @@ mongoose.connect(process.env.MONGO_URI)
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/issues", issueRoutes);
+app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/uploads", express.static("uploads"));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+

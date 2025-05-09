@@ -7,6 +7,7 @@ import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import "./AdminDashboard.css";
 
+const adminToken = localStorage.getItem("adminToken");
 // Fix Leaflet default icon issue
 let defaultIcon = L.icon({
   iconUrl: icon,
@@ -135,7 +136,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchIssues = async () => {
       try {
-        const response = await API.get("/admin/issues");
+        const response = await API.get("/issues");
         setIssues(response.data);
         setFilteredIssues(response.data);
         setLoading(false);
@@ -250,9 +251,14 @@ const AdminDashboard = () => {
     
     setSubmitting(true);
     setMessage("");
-    
+    console.log(updateData.status);
     try {
-      const response = await API.put(`/admin/issues/${selectedIssue._id}`, updateData);
+      const response = await API.patch(
+        `/admin-dashboard/issues/${selectedIssue._id}/status`,
+        { status: updateData.status },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+      
       
       // Update issues in state
       const updatedIssues = issues.map(issue => 

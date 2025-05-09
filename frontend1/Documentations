@@ -1,0 +1,158 @@
+------------------------------------------------------------
+Axios Configuration - Purpose and Concepts
+------------------------------------------------------------
+
+1. Axios Instance
+------------------
+Purpose:
+- Creates a reusable HTTP client with default settings.
+- Sets a base URL so you don’t need to write the full path in every request.
+- Sets default headers (e.g., "Content-Type: application/json").
+
+Code:
+const API = axios.create({
+  baseURL: "http://localhost:5000/api",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+2. Request Interceptor
+------------------------
+Purpose:
+- Automatically attaches the Authorization token to every outgoing request.
+- Ensures authenticated endpoints receive the correct Bearer token.
+
+Code:
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+3. Response Interceptor
+-------------------------
+Purpose:
+- Globally handles response errors (especially authentication issues).
+- Automatically logs out the user if the token is invalid or expired (HTTP 401).
+- Redirects to the login page to re-authenticate.
+
+Code:
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/auth";
+    }
+    return Promise.reject(error);
+  }
+);
+
+4. Token-based Authentication
+------------------------------
+Purpose:
+- Stores a JWT token in localStorage upon login.
+- Uses that token in the Authorization header for secure API access.
+- Cleans up and redirects on token failure.
+
+5. Exporting the API
+----------------------
+Purpose:
+- Makes the configured Axios instance available throughout the app.
+
+Code:
+export default API;
+
+------------------------------------------------------------
+Usage Example:
+------------------------------------------------------------
+import API from './api';
+
+API.get("/issues")
+   .then(response => console.log(response.data))
+   .catch(error => console.error(error));
+
+
+
+
+
+
+1. axios
+Purpose:
+Used to make HTTP requests from the frontend to your backend APIs.
+It simplifies sending GET, POST, PUT, DELETE requests and handles JSON parsing, error handling, and request configuration.
+It’s helpful for tasks like submitting a new issue report, logging in a user, or retrieving data.
+
+Example Use Case:
+axios.post("/api/issues", { title, description });
+
+2. leaflet
+Purpose:
+A powerful JavaScript mapping library that provides map rendering, layers, markers, zooming, and interaction.
+It’s the foundation for all the interactive maps you see — showing user-reported issues, admin markers, etc.
+
+Example Features:
+- Map display
+- Custom icons and markers
+- Zoom and pan behavior
+
+3. react
+Purpose:
+The core UI library for building your application using components.
+It lets you build interactive user interfaces declaratively and manage state effectively across your app.
+
+Key Features:
+- Component-based architecture
+- Virtual DOM for performance
+- Hooks (like useState, useEffect)
+
+4. react-dom
+Purpose:
+Works with React to render your components into the real DOM in the browser.
+It provides the rendering APIs needed to mount your app (typically in index.js).
+
+Example:
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+5. react-leaflet
+Purpose:
+Provides React-friendly components for using Leaflet maps.
+Rather than calling Leaflet APIs directly, you can use declarative JSX like <MapContainer> and <Marker>.
+
+Why Useful:
+- Easier integration of maps in React apps
+- Syncs with React's state and props system
+
+6. react-router-dom
+Purpose:
+Enables client-side routing in your single-page React app.
+This allows seamless navigation between different views (e.g., home, login, admin dashboard) without full page reloads.
+
+Components/Functions:
+- <Route>, <Link>, <Navigate>
+- useNavigate(), useParams()
+
+7. react-scripts
+Purpose:
+Provided by Create React App, this package includes all the build tools and configuration needed to run your app.
+It abstracts away Webpack, Babel, ESLint, etc., so you don’t need to configure them manually.
+
+Common Scripts:
+- npm start – Runs dev server
+- npm run build – Creates optimized production build
+
+8. web-vitals
+Purpose:
+A library by Google for measuring real-world performance metrics of your web app.
+These metrics help you understand and improve user experience (especially Core Web Vitals).
+
+Metrics Tracked:
+- FCP (First Contentful Paint)
+- LCP (Largest Contentful Paint)
+- CLS (Cumulative Layout Shift)

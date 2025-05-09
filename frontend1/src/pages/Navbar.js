@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import "./Navbar.css";
 
-const Navbar = ({ isAuthenticated, onLogout }) => {
+const Navbar = ({ isAuthenticated, userRole, onLogout }) => {
   return (
     <nav className="navbar">
       <div className="navbar-logo">
@@ -12,7 +12,11 @@ const Navbar = ({ isAuthenticated, onLogout }) => {
         <Link to="/" className="nav-link">Home</Link>
         {isAuthenticated ? (
           <>
-            <Link to="/dashboard" className="nav-link">Dashboard</Link>
+            {userRole === "admin" ? (
+              <Link to="/admin" className="nav-link">Admin Dashboard</Link>
+            ) : (
+              <Link to="/dashboard" className="nav-link">Dashboard</Link>
+            )}
             <button onClick={onLogout} className="nav-button">Logout</button>
           </>
         ) : (

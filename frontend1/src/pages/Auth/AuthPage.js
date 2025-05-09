@@ -44,12 +44,12 @@ const AuthPage = ({ setIsAuthenticated }) => {
       
       // Store token and show success message
       localStorage.setItem("token", res.data.accessToken);
-      setIsAuthenticated(true);
+      setIsAuthenticated(isAdmin); // Pass isAdmin flag to the parent component
       setMessage(`${isAdmin ? 'Admin' : 'User'} ${isLogin ? 'login' : 'signup'} successful!`);
       
       // Redirect to dashboard after successful login/signup
       setTimeout(() => {
-        navigate("/dashboard");
+        navigate(isAdmin ? "/admin" : "/dashboard");
       }, 1000);
     } catch (err) {
       setMessage(err.response?.data?.message || `${isLogin ? 'Login' : 'Signup'} failed`);
