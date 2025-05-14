@@ -1,8 +1,9 @@
+// api.js - Updated with vote service integration
 import axios from "axios";
 
 // Create axios instance with base URL
 const API = axios.create({
-  baseURL:"http://localhost:5000/api",
+  baseURL: "http://localhost:5000/api",
   headers: {
     "Content-Type": "application/json",
   },
@@ -38,4 +39,37 @@ API.interceptors.response.use(
   }
 );
 
+// Authentication helper functions
+const Auth = {
+  isAuthenticated() {
+    return !!localStorage.getItem("token");
+  },
+  
+  getToken() {
+    return localStorage.getItem("token");
+  },
+  
+  logout() {
+    localStorage.removeItem("token");
+    window.location.href = "/auth";
+  }
+};
+
+// Vote service functions
+const VoteService = {
+  voteForIssue(issueId) {
+    return API.post(`/votes/${issueId}`);
+  },
+  
+  checkUserVote(issueId) {
+    return API.get(`/votes/check/${issueId}`);
+  },
+  
+  getUserVotedIssues() {
+    return API.get('/votes/user');
+  }
+};
+
+// Export the API instance and additional services
+export { Auth, VoteService };
 export default API;

@@ -55,7 +55,7 @@ const MapView = ({ center, issues, selectedIssue, setSelectedIssue, getStatusIco
               <p>{issue.description}</p>
               {issue.imageUrl && (
                 <img 
-                  src={issue.imageUrl} 
+                  src={`http://localhost:5000${issue.imageUrl}`} 
                   alt={issue.type} 
                   className="issue-thumbnail"
                 />
@@ -253,11 +253,12 @@ const AdminDashboard = () => {
     setMessage("");
     console.log(updateData.status);
     try {
-      const response = await API.patch(
-        `/admin-dashboard/issues/${selectedIssue._id}/status`,
-        { status: updateData.status },
-        { headers: { Authorization: `Bearer ${adminToken}` } }
-      );
+ const response = await API.patch(`/issues/${selectedIssue._id}`, {
+  status: updateData.status,
+  department: updateData.department,
+});
+
+
       
       
       // Update issues in state
@@ -438,7 +439,7 @@ const AdminDashboard = () => {
                   {selectedIssue.imageUrl && (
                     <div className="issue-image-container">
                       <img 
-                        src={selectedIssue.imageUrl} 
+                        src={`http://localhost:5000${selectedIssue.imageUrl}`}
                         alt={selectedIssue.type} 
                         className="issue-image"
                       />
@@ -530,13 +531,13 @@ const AdminDashboard = () => {
             zoom={13} 
             style={{ height: "500px", width: "100%" }}
           >
-            <MapView 
+           <MapView 
               center={defaultCenter}
               issues={filteredIssues}
               selectedIssue={selectedIssue}
               setSelectedIssue={handleIssueSelect}
               getStatusIcon={getStatusIcon}
-            />
+            /> 
           </MapContainer>
         </div>
         

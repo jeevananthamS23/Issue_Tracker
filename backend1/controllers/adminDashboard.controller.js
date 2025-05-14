@@ -26,21 +26,27 @@ exports.getFilteredIssues = async (req, res) => {
 
 exports.updateIssueStatus = async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, department } = req.body;
 
   if (!["reported", "in-progress", "resolved"].includes(status)) {
     return res.status(400).json({ message: "Invalid status value" });
   }
 
   try {
-    const issue = await Issue.findByIdAndUpdate(id, { status }, { new: true });
+    const issue = await Issue.findByIdAndUpdate(
+      id,
+      { status, department }, 
+      { new: true } 
+    );
+
     if (!issue) return res.status(404).json({ message: "Issue not found" });
 
-    res.status(200).json({ message: "Status updated", issue });
+    res.status(200).json({ message: "Status and department updated", issue });
   } catch (err) {
-    res.status(500).json({ message: "Error updating status", error: err.message });
+    res.status(500).json({ message: "Error updating issue", error: err.message });
   }
 };
+
 
 exports.deleteIssue = async (req, res) => {
   const { id } = req.params;

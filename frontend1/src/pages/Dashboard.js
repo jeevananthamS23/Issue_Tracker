@@ -315,10 +315,10 @@ const Dashboard = () => {
                 
                 {issue.imageUrl && (
                   <img 
-                    src={issue.imageUrl} 
-                    alt={issue.type} 
-                    className="issue-image"
-                  />
+                     src={`http://localhost:5000${issue.imageUrl}`} 
+                     alt={issue.type} 
+                     className="issue-image"
+                     />
                 )}
                 
                 <div className="issue-footer">
@@ -358,11 +358,11 @@ const Dashboard = () => {
                       <h3>{issue.type}</h3>
                       <p>{issue.description}</p>
                       {issue.imageUrl && (
-                        <img 
-                          src={issue.imageUrl} 
-                          alt={issue.type} 
-                          className="issue-thumbnail"
-                        />
+                         <img 
+                     src={`http://localhost:5000${issue.imageUrl}`} 
+                     alt={issue.type} 
+                     className="issue-image"
+                     />
                       )}
                       <div className="issue-details">
                         <span className={`status-badge ${issue.status}`}>

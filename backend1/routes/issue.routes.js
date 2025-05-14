@@ -6,6 +6,7 @@ const {
   getAllIssues,
   reportIssue,
   getUserIssues,
+ 
 } = require("../controllers/issue.controller");
 
 // Public: get all issues
