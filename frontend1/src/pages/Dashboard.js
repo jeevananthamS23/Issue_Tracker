@@ -230,20 +230,59 @@ const Dashboard = () => {
           <form onSubmit={handleSubmit} className="report-form">
             <div className="form-group">
               <label htmlFor="type">Issue Type:</label>
-              <select
-                id="type"
-                name="type"
-                value={newIssue.type}
-                onChange={handleChange}
-                required
-              >
-                <option value="pothole">Pothole</option>
-                <option value="street-light">Street Light Out</option>
-                <option value="graffiti">Graffiti</option>
-                <option value="trash">Trash/Debris</option>
-                <option value="water-leak">Water Leak</option>
-                <option value="other">Other</option>
-              </select>
+            <select
+  id="type"
+  name="type"
+  value={newIssue.type}
+  onChange={handleChange}
+  required
+>
+  <option value="">-- Select Issue Type --</option>
+
+  <optgroup label="Village Issues">
+    <option value="unpaved-road">Unpaved Road</option>
+    <option value="no-drainage">No Drainage System</option>
+    <option value="electricity-outage">Electricity Outage</option>
+    <option value="low-voltage">Low Voltage</option>
+    <option value="water-scarcity">Water Scarcity</option>
+    <option value="open-defecation">Open Defecation</option>
+    <option value="animal-problem">Stray Animals</option>
+    <option value="damaged-borewell">Damaged Borewell</option>
+    <option value="lack-of-toilets">Lack of Toilets</option>
+    <option value="unclean-handpumps">Unclean Hand Pumps</option>
+    <option value="school-infra">Poor School Infrastructure</option>
+    <option value="no-medical-center">No Primary Medical Center</option>
+    <option value="poor-connectivity">Poor Mobile Network</option>
+  </optgroup>
+
+  <optgroup label="City Issues">
+    <option value="pothole">Pothole</option>
+    <option value="street-light">Street Light Out</option>
+    <option value="graffiti">Graffiti</option>
+    <option value="trash">Trash/Debris</option>
+    <option value="water-leak">Water Leak</option>
+    <option value="road-damage">Road Damage</option>
+    <option value="sewage">Sewage Overflow</option>
+    <option value="illegal-dumping">Illegal Dumping</option>
+    <option value="abandoned-vehicle">Abandoned Vehicle</option>
+    <option value="noise">Noise Complaint</option>
+    <option value="construction-waste">Construction Waste</option>
+    <option value="traffic-signal">Broken Traffic Signal</option>
+    <option value="encroachment">Footpath Encroachment</option>
+    <option value="overflowing-dustbin">Overflowing Dustbin</option>
+  </optgroup>
+
+  <optgroup label="Shared/Common Issues">
+    <option value="blocked-drain">Blocked Drainage</option>
+    <option value="sanitation">Poor Sanitation</option>
+    <option value="foul-smell">Foul Smell/Dead Animal</option>
+    <option value="drinking-water">Contaminated Drinking Water</option>
+    <option value="school-issues">School Facility Issue</option>
+    <option value="healthcare">Lack of Healthcare Access</option>
+    <option value="other">Other</option>
+  </optgroup>
+</select>
+
             </div>
             
             <div className="form-group">

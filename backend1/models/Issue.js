@@ -5,7 +5,8 @@ const issueSchema = new mongoose.Schema({
   type: { type: String, required: true }, // e.g., "pothole", "garbage"
   description: { type: String, required: true },
   imageUrl: { type: String }, // URL for uploaded image
-  department:{type:String},
+  department: { type: String },
+  internalNotes: { type: String }, // Add this field
   location: {
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }
@@ -17,5 +18,6 @@ const issueSchema = new mongoose.Schema({
   },
   votes: { type: Number, default: 0 },
 }, { timestamps: true });
+
 
 module.exports = mongoose.model("Issue", issueSchema);

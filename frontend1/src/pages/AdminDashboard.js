@@ -92,14 +92,17 @@ const AdminDashboard = () => {
   });
   
   // State for departments (could be fetched from API)
-  const [departments, setDepartments] = useState([
-    "Roads & Infrastructure",
-    "Public Works",
-    "Waste Management",
-    "Street Lighting",
-    "Parks & Recreation",
-    "Water Services"
-  ]);
+const [departments, setDepartments] = useState([
+  "Roads & Infrastructure",
+  "Public Works",
+  "Waste Management",
+  "Street Lighting",
+  "Parks & Recreation",
+  "Water Services",
+  "Environmental Services",
+  "Urban Planning"
+]);
+
   
   // State for issue update
   const [updateData, setUpdateData] = useState({
@@ -244,37 +247,36 @@ const AdminDashboard = () => {
   };
   
   // Handle issue update form submission
-  const handleUpdateSubmit = async (e) => {
-    e.preventDefault();
+const handleUpdateSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!selectedIssue) return;
+  
+  setSubmitting(true);
+  setMessage("");
+  
+  try {
+    // Include internalNotes in the request payload
+    const response = await API.patch(`/admin-dashboard/issues/${selectedIssue._id}`, {
+      status: updateData.status,
+      department: updateData.department,
+      internalNotes: updateData.internalNotes
+    });
     
-    if (!selectedIssue) return;
+    // Update issues in state
+    const updatedIssues = issues.map(issue => 
+      issue._id === selectedIssue._id ? { ...issue, ...response.data } : issue
+    );
     
-    setSubmitting(true);
-    setMessage("");
-    console.log(updateData.status);
-    try {
- const response = await API.patch(`/issues/${selectedIssue._id}`, {
-  status: updateData.status,
-  department: updateData.department,
-});
-
-
-      
-      
-      // Update issues in state
-      const updatedIssues = issues.map(issue => 
-        issue._id === selectedIssue._id ? { ...issue, ...response.data } : issue
-      );
-      
-      setIssues(updatedIssues);
-      setSelectedIssue({ ...selectedIssue, ...response.data });
-      setMessage("Issue updated successfully!");
-    } catch (err) {
-      setMessage(err.response?.data?.message || "Failed to update issue. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    setIssues(updatedIssues);
+    setSelectedIssue({ ...selectedIssue, ...response.data });
+    setMessage("Issue updated successfully!");
+  } catch (err) {
+    setMessage(err.response?.data?.message || "Failed to update issue. Please try again.");
+  } finally {
+    setSubmitting(false);
+  }
+};
   
   return (
     <div className="admin-dashboard-container">
@@ -319,24 +321,46 @@ const AdminDashboard = () => {
               <option value="resolved">Resolved</option>
             </select>
           </div>
-          
-          <div className="filter-group">
-            <label htmlFor="type">Issue Type:</label>
-            <select
-              id="type"
-              name="type"
-              value={filters.type}
-              onChange={handleFilterChange}
-            >
-              <option value="all">All Types</option>
-              <option value="pothole">Pothole</option>
-              <option value="street-light">Street Light Out</option>
-              <option value="graffiti">Graffiti</option>
-              <option value="trash">Trash/Debris</option>
-              <option value="water-leak">Water Leak</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+  <div className="filter-group">
+  <label htmlFor="type">Issue Type:</label>
+  <select
+    id="type"
+    name="type"
+    value={filters.type}
+    onChange={handleFilterChange}
+  >
+    <option value="all">All Types</option>
+
+    {/* Village Issues */}
+    <option value="unpaved-road">Unpaved Road</option>
+    <option value="no-drainage">No Drainage System</option>
+    <option value="electricity-outage">Electricity Outage</option>
+    <option value="water-scarcity">Water Scarcity</option>
+    <option value="open-defecation">Open Defecation</option>
+    <option value="animal-problem">Stray Animals</option>
+    <option value="agricultural-waste">Agricultural Waste</option>
+
+    {/* City Issues */}
+    <option value="pothole">Pothole</option>
+    <option value="street-light">Street Light Out</option>
+    <option value="graffiti">Graffiti</option>
+    <option value="trash">Trash/Debris</option>
+    <option value="water-leak">Water Leak</option>
+    <option value="road-damage">Road Damage</option>
+    <option value="sewage">Sewage Overflow</option>
+    <option value="illegal-dumping">Illegal Dumping</option>
+    <option value="abandoned-vehicle">Abandoned Vehicle</option>
+    <option value="noise">Noise Complaint</option>
+
+    {/* Shared Issues */}
+    <option value="healthcare">Lack of Healthcare Access</option>
+    <option value="school-issues">School Infrastructure</option>
+    <option value="sanitation">Poor Sanitation</option>
+    <option value="drainage">Blocked Drainage</option>
+    <option value="other">Other</option>
+  </select>
+</div>
+
           
           <div className="filter-group">
             <label htmlFor="department">Department:</label>

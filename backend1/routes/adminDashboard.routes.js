@@ -13,7 +13,7 @@ router.get("/issues", verifyAdmin, getAllIssues);
 router.get("/issues/filter", verifyAdmin, getFilteredIssues); // e.g., /issues/filter?status=resolved&type=pothole
 // adminDashboard.router.js
 
-router.patch("/issues/:id/status/departement", verifyAdmin, updateIssueStatus);
+router.patch("/issues/:id", verifyAdmin, updateIssueStatus);
 
 router.delete("/issues/:id", verifyAdmin, deleteIssue);
 

@@ -26,7 +26,7 @@ exports.getFilteredIssues = async (req, res) => {
 
 exports.updateIssueStatus = async (req, res) => {
   const { id } = req.params;
-  const { status, department } = req.body;
+  const { status, department, internalNotes } = req.body;
 
   if (!["reported", "in-progress", "resolved"].includes(status)) {
     return res.status(400).json({ message: "Invalid status value" });
@@ -35,13 +35,13 @@ exports.updateIssueStatus = async (req, res) => {
   try {
     const issue = await Issue.findByIdAndUpdate(
       id,
-      { status, department }, 
+      { status, department, internalNotes }, 
       { new: true } 
     );
 
     if (!issue) return res.status(404).json({ message: "Issue not found" });
 
-    res.status(200).json({ message: "Status and department updated", issue });
+    res.status(200).json(issue);
   } catch (err) {
     res.status(500).json({ message: "Error updating issue", error: err.message });
   }

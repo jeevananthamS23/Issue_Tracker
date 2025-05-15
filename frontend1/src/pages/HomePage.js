@@ -163,11 +163,13 @@ const HomePage = () => {
                       <span className={`status-badge ${issue.status}`}>
                         {issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
                       </span>
-                      <span className="votes">
-                        <i className="fas fa-thumbs-up"></i> {issue.votes}
-                      </span>
+                     <td>
+            <span className="votes" style={{ color: "red" }}>
+            <i className="fas fa-thumbs-up"></i> Votes: {issue.votes}
+            </span>
+            </td>
                     </div>
-                    <p className="date">Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
+                    <p className="date" style={{ color: "Green" }}>Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
                     
                     {/* Vote Button */}
                     <div className="vote-container">
