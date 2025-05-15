@@ -1,68 +1,102 @@
+/* Navbar.css - Modern Redesign */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 .navbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 2rem;
-    background-color: #2c3e50;
-    color: white;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  }
-  
-  .navbar-logo a {
-    color: white;
-    text-decoration: none;
-    font-size: 1.5rem;
-    font-weight: bold;
-  }
-  
-  .navbar-links {
-    display: flex;
-    align-items: center;
-  }
-  
-  .nav-link {
-    margin: 0 15px;
-    color: white;
-    text-decoration: none;
-    transition: color 0.3s ease;
-  }
-  
-  .nav-link:hover {
-    color: #3498db;
-  }
-  
-  .nav-button {
-    padding: 8px 16px;
-    background-color: #3498db;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    text-decoration: none;
-    transition: background-color 0.3s ease;
-  }
-  
-  .nav-button:hover {
-    background-color: #2980b9;
-  }
-  
-  @media (max-width: 768px) {
-    .navbar {
-      padding: 1rem;
-      flex-direction: column;
-    }
-    
-    .navbar-logo {
-      margin-bottom: 1rem;
-    }
-    
-    .navbar-links {
-      width: 100%;
-      justify-content: space-around;
-    }
-    
-    .nav-link {
-      margin: 0 10px;
-    }
-  }
+display: flex;
+justify-content: space-between;
+align-items: center;
+padding: 1rem 2rem;
+background: linear-gradient(135deg, #2c3e50 0%, #1a2a3a 100%);
+color: white;
+box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+font-family: 'Poppins', sans-serif;
+position: sticky;
+top: 0;
+z-index: 1000;
+transition: all 0.3s ease;
+}
+.navbar-logo a {
+color: white;
+text-decoration: none;
+font-size: 1.5rem;
+font-weight: 600;
+display: flex;
+align-items: center;
+transition: transform 0.3s ease;
+}
+.navbar-logo a:hover {
+transform: translateY(-2px);
+text-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
+}
+.navbar-links {
+display: flex;
+align-items: center;
+}
+.nav-link {
+margin: 0 15px;
+color: rgba(255, 255, 255, 0.85);
+text-decoration: none;
+font-weight: 500;
+padding: 8px 0;
+position: relative;
+transition: all 0.3s ease;
+}
+.nav-link::after {
+content: '';
+position: absolute;
+bottom: 0;
+left: 0;
+width: 0;
+height: 2px;
+background: linear-gradient(90deg, #3498db, #5DADE2);
+transition: width 0.3s ease;
+}
+.nav-link:hover {
+color: white;
+}
+.nav-link:hover::after {
+width: 100%;
+}
+.nav-button {
+padding: 10px 18px;
+background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+color: white;
+border: none;
+border-radius: 6px;
+cursor: pointer;
+font-size: 0.9rem;
+font-weight: 500;
+text-decoration: none;
+transition: all 0.3s ease;
+box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2);
+font-family: 'Poppins', sans-serif;
+}
+.nav-button:hover {
+transform: translateY(-2px);
+box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+background: linear-gradient(135deg, #2980b9 0%, #1e6091 100%);
+}
+.nav-button:active {
+transform: translateY(0);
+box-shadow: 0 2px 10px rgba(52, 152, 219, 0.2);
+}
+@media (max-width: 768px) {
+.navbar {
+padding: 1rem;
+flex-direction: column;
+}
+.navbar-logo {
+margin-bottom: 1rem;
+}
+.navbar-links {
+width: 100%;
+justify-content: center;
+flex-wrap: wrap;
+gap: 10px;
+}
+.nav-link {
+margin: 0 10px;
+}
+.nav-button {
+margin-top: 8px;
+}
+}

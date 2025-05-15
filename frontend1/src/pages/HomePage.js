@@ -28,7 +28,7 @@ const getStatusIcon = (status) => {
 
   return L.divIcon({
     className: "custom-marker",
-    html: `<div style="background-color: ${colors[status] || '#ff0000'}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
+    html: `<div style="background-color: ${colors[status] || '#ff0000'}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.2);"></div>`,
     iconSize: [20, 20],
     iconAnchor: [10, 10],
     popupAnchor: [0, -10],
@@ -163,13 +163,11 @@ const HomePage = () => {
                       <span className={`status-badge ${issue.status}`}>
                         {issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
                       </span>
-                     <td>
-            <span className="votes" style={{ color: "red" }}>
-            <i className="fas fa-thumbs-up"></i> Votes: {issue.votes}
-            </span>
-            </td>
+                      <span className="votes">
+                        <i className="fas fa-thumbs-up"></i>votes: {issue.votes}
+                      </span>
                     </div>
-                    <p className="date" style={{ color: "Green" }}>Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
+                    <p className="date">Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
                     
                     {/* Vote Button */}
                     <div className="vote-container">

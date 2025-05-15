@@ -86,14 +86,13 @@ const AuthPage = ({ setIsAuthenticated }) => {
       </div>
       
       <div className="user-type-toggle">
-        <label>
-          <input
-            type="checkbox"
-            checked={isAdmin}
-            onChange={toggleUserType}
-          />
-          Admin Mode
-        </label>
+        <input
+          type="checkbox"
+          id="adminToggle"
+          checked={isAdmin}
+          onChange={toggleUserType}
+        />
+        <label htmlFor="adminToggle">Admin Mode</label>
       </div>
       
       <form onSubmit={handleSubmit}>

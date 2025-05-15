@@ -1,121 +1,222 @@
-/* AuthPage.css - Import this in your AuthPage.js component */
-
+/* AuthPage.css - Modern redesign */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
 .auth-container {
-    max-width: 400px;
-    margin: 40px auto;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    background-color: #fff;
-  }
-  
-  .auth-tabs {
-    display: flex;
-    margin-bottom: 20px;
-    border-bottom: 1px solid #e0e0e0;
-  }
-  
-  .tab {
-    flex: 1;
-    padding: 10px;
-    background: none;
-    border: none;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    color: #666;
-    transition: all 0.3s ease;
-  }
-  
-  .tab.active {
-    color: #3f51b5;
-    border-bottom: 2px solid #3f51b5;
-  }
-  
-  .user-type-toggle {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 15px;
-  }
-  
-  .user-type-toggle label {
-    display: flex;
-    align-items: center;
-    font-size: 14px;
-    color: #555;
-    cursor: pointer;
-  }
-  
-  .user-type-toggle input {
-    margin-right: 6px;
-  }
-  
-  form h2 {
-    text-align: center;
-    margin-bottom: 20px;
-    color: #333;
-  }
-  
-  .form-group {
-    margin-bottom: 15px;
-  }
-  
-  input {
-    width: 100%;
-    padding: 10px;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    font-size: 14px;
-    transition: border-color 0.3s;
-  }
-  
-  input:focus {
-    border-color: #3f51b5;
-    outline: none;
-  }
-  
-  .submit-btn {
-    width: 100%;
-    padding: 12px;
-    background-color: #3f51b5;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 16px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-  }
-  
-  .submit-btn:hover {
-    background-color: #303f9f;
-  }
-  
-  .message {
-    text-align: center;
-    margin-top: 15px;
-    padding: 8px;
-    border-radius: 4px;
-    font-size: 14px;
-    color: #555;
-  }
-  
-  .toggle-prompt {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 14px;
-    color: #666;
-  }
-  
-  .toggle-btn {
-    background: none;
-    border: none;
-    color: #3f51b5;
-    cursor: pointer;
-    font-weight: 500;
-    padding: 0;
-    font-size: 14px;
-  }
-  
-  .toggle-btn:hover {
-    text-decoration: underline;
-  }
+max-width: 450px;
+margin: 60px auto;
+padding: 30px;
+border-radius: 16px;
+box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+background-color: #fff;
+font-family: 'Poppins', sans-serif;
+position: relative;
+overflow: hidden;
+}
+.auth-container::before {
+content: '';
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 6px;
+background: linear-gradient(90deg, #4776E6, #8E54E9);
+}
+.auth-tabs {
+display: flex;
+margin-bottom: 30px;
+border-bottom: none;
+position: relative;
+}
+.tab {
+flex: 1;
+padding: 15px 0;
+background: none;
+border: none;
+font-size: 16px;
+font-weight: 500;
+cursor: pointer;
+color: #94a3b8;
+transition: all 0.3s ease;
+position: relative;
+z-index: 1;
+}
+.tab.active {
+color: #4776E6;
+font-weight: 600;
+}
+.tab::after {
+content: '';
+position: absolute;
+bottom: 0;
+left: 50%;
+transform: translateX(-50%);
+width: 0;
+height: 3px;
+background: linear-gradient(90deg, #4776E6, #8E54E9);
+transition: width 0.3s ease;
+border-radius: 3px;
+}
+.tab.active::after {
+width: 60%;
+}
+.user-type-toggle {
+display: flex;
+justify-content: flex-end;
+margin-bottom: 25px;
+}
+.user-type-toggle label {
+display: flex;
+align-items: center;
+font-size: 14px;
+color: #64748b;
+cursor: pointer;
+position: relative;
+padding-left: 30px;
+user-select: none;
+}
+.user-type-toggle input {
+position: absolute;
+opacity: 0;
+cursor: pointer;
+height: 0;
+width: 0;
+}
+/* Custom checkbox */
+.user-type-toggle label::before {
+content: '';
+position: absolute;
+left: 0;
+top: 50%;
+transform: translateY(-50%);
+width: 20px;
+height: 20px;
+background-color: #f1f5f9;
+border-radius: 4px;
+transition: all 0.2s ease;
+}
+.user-type-toggle input:checked + label::before {
+background-color: #4776E6;
+}
+.user-type-toggle label::after {
+content: '';
+position: absolute;
+left: 7px;
+top: 50%;
+transform: translateY(-50%) scale(0);
+width: 6px;
+height: 10px;
+border: solid white;
+border-width: 0 2px 2px 0;
+transform-origin: center;
+transition: all 0.2s ease;
+opacity: 0;
+}
+.user-type-toggle input:checked + label::after {
+transform: translateY(-70%) rotate(45deg) scale(1);
+opacity: 1;
+}
+form h2 {
+text-align: center;
+margin-bottom: 25px;
+color: #1e293b;
+font-weight: 600;
+font-size: 22px;
+}
+.form-group {
+margin-bottom: 20px;
+position: relative;
+}
+input {
+width: 100%;
+padding: 14px 16px;
+border-radius: 8px;
+border: 1px solid #e2e8f0;
+font-size: 15px;
+transition: all 0.3s ease;
+background-color: #f8fafc;
+color: #334155;
+font-family: 'Poppins', sans-serif;
+}
+input:focus {
+border-color: #4776E6;
+outline: none;
+box-shadow: 0 0 0 3px rgba(71, 118, 230, 0.1);
+background-color: #fff;
+}
+input::placeholder {
+color: #94a3b8;
+}
+.submit-btn {
+width: 100%;
+padding: 14px;
+background: linear-gradient(90deg, #4776E6, #8E54E9);
+color: white;
+border: none;
+border-radius: 8px;
+font-size: 16px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.3s ease;
+font-family: 'Poppins', sans-serif;
+margin-top: 10px;
+position: relative;
+overflow: hidden;
+}
+.submit-btn:hover {
+box-shadow: 0 6px 15px rgba(71, 118, 230, 0.25);
+transform: translateY(-2px);
+}
+.submit-btn:active {
+transform: translateY(0);
+box-shadow: 0 3px 8px rgba(71, 118, 230, 0.2);
+}
+.message {
+text-align: center;
+margin-top: 20px;
+padding: 12px;
+border-radius: 8px;
+font-size: 14px;
+color: #475569;
+background-color: #f8fafc;
+border-left: 4px solid #4776E6;
+animation: fadeIn 0.5s ease;
+}
+@keyframes fadeIn {
+from { opacity: 0; transform: translateY(10px); }
+to { opacity: 1; transform: translateY(0); }
+}
+.toggle-prompt {
+text-align: center;
+margin-top: 25px;
+font-size: 14px;
+color: #64748b;
+}
+.toggle-btn {
+background: none;
+border: none;
+cursor: pointer;
+padding: 0;
+font-size: 14px;
+font-weight: 600;
+color: #4776E6;
+transition: all 0.2s ease;
+font-family: 'Poppins', sans-serif;
+}
+.toggle-btn:hover {
+color: #8E54E9;
+text-decoration: underline;
+}
+/* Responsive adjustments */
+@media (max-width: 480px) {
+.auth-container {
+margin: 20px auto;
+padding: 20px;
+width: 90%;
+border-radius: 12px;
+}
+input {
+padding: 12px 14px;
+}
+.submit-btn {
+padding: 12px;
+}
+}
