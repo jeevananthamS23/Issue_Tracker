@@ -18,28 +18,30 @@ var adminDashboardRoutes = require("./routes/adminDashboard.routes");
 
 var voteRoutes = require("./routes/vote.routes");
 
-var app = express(); // Middleware
+var app = express(); // ----- CORS Middleware (Production Only) -----
 
 app.use(cors({
   origin: "https://issue-tracker-1-lwig.onrender.com",
-  // your frontend URL
-  credentials: true
+  // your deployed frontend
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
 app.use("/uploads", express["static"]("uploads")); // Static path for uploaded images
-// Database connection
+// ----- Database Connection -----
 
 mongoose.connect(process.env.MONGO_URI).then(function () {
   return console.log("MongoDB Connected");
 })["catch"](function (err) {
   return console.log("Mongo Error", err);
-}); // Routes
+}); // ----- Routes -----
 
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/issues", issueRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
-app.use("/api/votes", voteRoutes); // Start server
+app.use("/api/votes", voteRoutes); // ----- Start Server -----
 
 var PORT = process.env.PORT || 5000;
 app.listen(PORT, function () {

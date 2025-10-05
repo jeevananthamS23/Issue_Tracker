@@ -1,15 +1,14 @@
-
 import axios from "axios";
 
-// Create axios instance with base URL
 const API = axios.create({
-  baseURL: "https://issue-tracker-frnb.onrender.com/api",
+  baseURL: "https://issue-tracker-frnb.onrender.com/api", // your deployed backend
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true // important for auth cookies
 });
 
-// Add request interceptor to include auth token in requests
+// Request interceptor to add auth token
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
@@ -18,58 +17,47 @@ API.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Add response interceptor to handle authentication errors
+// Response interceptor to handle 401 errors
 API.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    // Handle 401 Unauthorized errors (expired or invalid token)
     if (error.response && error.response.status === 401) {
       localStorage.removeItem("token");
-      // Redirect to login page
       window.location.href = "/auth";
     }
     return Promise.reject(error);
   }
 );
 
-// Authentication helper functions
+// Auth helper
 const Auth = {
   isAuthenticated() {
     return !!localStorage.getItem("token");
   },
-  
   getToken() {
     return localStorage.getItem("token");
   },
-  
   logout() {
     localStorage.removeItem("token");
     window.location.href = "/auth";
   }
 };
 
-// Vote service functions
+// Vote service
 const VoteService = {
   voteForIssue(issueId) {
     return API.post(`/votes/${issueId}`);
   },
-  
   checkUserVote(issueId) {
     return API.get(`/votes/check/${issueId}`);
   },
-  
   getUserVotedIssues() {
     return API.get('/votes/user');
   }
 };
 
-// Export the API instance and additional services
 export { Auth, VoteService };
 export default API;
