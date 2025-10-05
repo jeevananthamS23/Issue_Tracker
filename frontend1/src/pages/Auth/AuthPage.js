@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../../api/api";
+import { Eye, EyeOff } from 'lucide-react';
 import "../AuthCss/AuthPage.css";
 
 const AuthPage = ({ setIsAuthenticated }) => {
@@ -21,6 +22,9 @@ const AuthPage = ({ setIsAuthenticated }) => {
   
   // Response message state
   const [message, setMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showAdminKey, setShowAdminKey] = useState(false);
+
 
   // Handle form input changes
   const handleChange = (e) => {
@@ -125,30 +129,44 @@ const AuthPage = ({ setIsAuthenticated }) => {
         </div>
         
         {/* Password field (for all forms) */}
-        <div className="form-group">
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={handleChange}
-            required
-          />
-        </div>
+      <div className="form-group password-field">
+             <input
+           type={showPassword ? "text" : "password"}
+          name="password"
+          placeholder="Password"
+          value={form.password}
+          onChange={handleChange}
+          required
+         />
+         <button
+         type="button"
+         className="password-toggle"
+         onClick={() => setShowPassword(!showPassword)}
+        >
+    {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+  </button>
+</div>
         
         {/* Admin Key field (only for admin) */}
-        {isAdmin && (
-          <div className="form-group">
-            <input
-              type="password"
-              name="adminKey"
-              placeholder="Admin Key"
-              value={form.adminKey}
-              onChange={handleChange}
-              required
-            />
-          </div>
-        )}
+       {isAdmin && (
+  <div className="form-group password-field">
+    <input
+      type={showAdminKey ? "text" : "password"}
+      name="adminKey"
+      placeholder="Admin Key"
+      value={form.adminKey}
+      onChange={handleChange}
+      required
+    />
+    <button
+      type="button"
+      className="password-toggle"
+      onClick={() => setShowAdminKey(!showAdminKey)}
+    >
+      {showAdminKey ? <Eye size={18} /> : <EyeOff size={18} />}
+    </button>
+  </div>
+)}
         
         {/* Submit button */}
         <button type="submit" className="submit-btn">

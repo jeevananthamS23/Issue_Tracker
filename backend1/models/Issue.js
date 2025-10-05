@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const issueSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  type: { type: String, required: true }, // e.g., "pothole", "garbage"
+  type: { type: String, required: true },
   description: { type: String, required: true },
   imageUrl: { type: String }, // URL for uploaded image
   department: { type: String },

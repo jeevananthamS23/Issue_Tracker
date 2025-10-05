@@ -7,7 +7,7 @@ const userRoutes = require("./routes/userAuth.routes");
 const adminRoutes = require("./routes/adminAuth.routes");
 const issueRoutes = require("./routes/issue.routes");
 const adminDashboardRoutes = require("./routes/adminDashboard.routes");
-const voteRoutes = require("./routes/vote.routes"); // ✅ Import vote routes
+const voteRoutes = require("./routes/vote.routes");
 
 const app = express();
 
@@ -26,7 +26,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/issues", issueRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
-app.use("/api/votes", voteRoutes); // ✅ Add voting API route
+app.use("/api/votes", voteRoutes); 
 
 // Start server
 const PORT = process.env.PORT || 5000;
