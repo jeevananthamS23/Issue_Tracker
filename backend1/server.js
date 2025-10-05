@@ -12,8 +12,6 @@ const voteRoutes = require("./routes/vote.routes");
 const app = express();
 
 // Middleware
-const cors = require("cors");
-
 app.use(cors({
   origin: "https://issue-tracker-1-lwig.onrender.com",  // your frontend URL
   credentials: true
