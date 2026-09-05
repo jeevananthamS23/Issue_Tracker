@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
-import API from "../api/api";
+import API, { getImageUrl } from "../api/api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -354,7 +354,7 @@ const Dashboard = () => {
                 
                 {issue.imageUrl && (
                   <img 
-                     src={`http://localhost:5000${issue.imageUrl}`} 
+                     src={getImageUrl(issue.imageUrl)}
                      alt={issue.type} 
                      className="issue-image"
                      />
@@ -398,7 +398,7 @@ const Dashboard = () => {
                       <p>{issue.description}</p>
                       {issue.imageUrl && (
                          <img 
-                     src={`http://localhost:5000${issue.imageUrl}`} 
+                     src={getImageUrl(issue.imageUrl)}
                      alt={issue.type} 
                      className="issue-image"
                      />

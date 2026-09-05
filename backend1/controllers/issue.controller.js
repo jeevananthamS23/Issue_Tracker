@@ -27,7 +27,7 @@ exports.reportIssue = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const imageUrl = req.file ? req.file.path : null;
 
     const newIssue = new Issue({
       userId: req.user.userId,

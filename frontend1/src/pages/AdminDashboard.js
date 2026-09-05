@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import API from "../api/api";
+import API, { getImageUrl } from "../api/api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -55,7 +55,7 @@ const MapView = ({ center, issues, selectedIssue, setSelectedIssue, getStatusIco
               <p>{issue.description}</p>
               {issue.imageUrl && (
                 <img 
-                  src={`http://localhost:5000${issue.imageUrl}`} 
+                  src={getImageUrl(issue.imageUrl)}
                   alt={issue.type} 
                   className="issue-thumbnail"
                 />
@@ -463,7 +463,7 @@ const handleUpdateSubmit = async (e) => {
                   {selectedIssue.imageUrl && (
                     <div className="issue-image-container">
                       <img 
-                        src={`http://localhost:5000${selectedIssue.imageUrl}`}
+                        src={getImageUrl(selectedIssue.imageUrl)}
                         alt={selectedIssue.type} 
                         className="issue-image"
                       />

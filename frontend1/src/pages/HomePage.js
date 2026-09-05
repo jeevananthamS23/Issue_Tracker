@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import API, { Auth, VoteService } from "../api/api";
+import API, { Auth, VoteService, getImageUrl } from "../api/api";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -154,7 +154,7 @@ const HomePage = () => {
                     <p>{issue.description}</p>
                     {issue.imageUrl && (
                       <img 
-                        src={`http://localhost:5000${issue.imageUrl}`} 
+                        src={getImageUrl(issue.imageUrl)} 
                         alt={issue.type} 
                         className="issue-image"
                       />

@@ -1,12 +1,21 @@
 import axios from "axios";
 
+const BASE_URL = "https://issue-tracker-frnb.onrender.com"; // your deployed backend
+
 const API = axios.create({
-  baseURL: "https://issue-tracker-frnb.onrender.com/api", // your deployed backend
+  baseURL: `${BASE_URL}/api`,
   headers: {
     "Content-Type": "application/json",
   },
   withCredentials: true // important for auth cookies
 });
+
+// Cloudinary URLs are already absolute; older issues stored a relative
+// "/uploads/..." path served by this backend, so fall back to that.
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  return imageUrl.startsWith("http") ? imageUrl : `${BASE_URL}${imageUrl}`;
+};
 
 // Request interceptor to add auth token
 API.interceptors.request.use(
@@ -59,5 +68,5 @@ const VoteService = {
   }
 };
 
-export { Auth, VoteService };
+export { Auth, VoteService, getImageUrl };
 export default API;
