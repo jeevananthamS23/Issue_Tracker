@@ -13,7 +13,7 @@ const app = express();
 
 // ----- CORS Middleware (Production Only) -----
 app.use(cors({
-  origin: "https://issue-tracker-1-lwig.onrender.com", // your deployed frontend
+  origin: "https://issue-tracker-kappa-pearl.vercel.app", // your deployed frontend (Vercel)
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
   allowedHeaders: ["Content-Type", "Authorization"]
