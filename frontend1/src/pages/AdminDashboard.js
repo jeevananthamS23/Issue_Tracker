@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import API, { getImageUrl } from "../api/api";
 import L from "leaflet";
@@ -7,7 +7,6 @@ import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import "./AdminDashboard.css";
 
-const adminToken = localStorage.getItem("adminToken");
 // Fix Leaflet default icon issue
 let defaultIcon = L.icon({
   iconUrl: icon,
@@ -91,17 +90,17 @@ const AdminDashboard = () => {
     searchQuery: "",
   });
   
-  // State for departments (could be fetched from API)
-const [departments, setDepartments] = useState([
-  "Roads & Infrastructure",
-  "Public Works",
-  "Waste Management",
-  "Street Lighting",
-  "Parks & Recreation",
-  "Water Services",
-  "Environmental Services",
-  "Urban Planning"
-]);
+  // Departments (could be fetched from API)
+  const departments = [
+    "Roads & Infrastructure",
+    "Public Works",
+    "Waste Management",
+    "Street Lighting",
+    "Parks & Recreation",
+    "Water Services",
+    "Environmental Services",
+    "Urban Planning"
+  ];
 
   
   // State for issue update
@@ -152,13 +151,8 @@ const [departments, setDepartments] = useState([
     fetchIssues();
   }, []);
   
-  // Apply filters when filters change
-  useEffect(() => {
-    applyFilters();
-  }, [filters, issues]);
-  
   // Apply filters to issues
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let result = [...issues];
     
     // Filter by status
@@ -211,8 +205,13 @@ const [departments, setDepartments] = useState([
     }
     
     setFilteredIssues(result);
-  };
-  
+  }, [issues, filters]);
+
+  // Apply filters when filters or issues change
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
+
   // Handle filter changes
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
