@@ -27,12 +27,26 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch(err => console.log("Mongo Error", err));
 
+// ----- Health Check -----
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
 // ----- Routes -----
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/issues", issueRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/votes", voteRoutes);
+
+// ----- Error handler (catches upload/multer/cloudinary errors too) -----
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: true, message: err.message || "Internal server error" });
+});
 
 // ----- Start Server -----
 const PORT = process.env.PORT || 5000;

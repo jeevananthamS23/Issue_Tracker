@@ -40,6 +40,7 @@ exports.reportIssue = async (req, res) => {
     await newIssue.save();
     res.status(201).json({ message: "Issue reported successfully", issue: newIssue });
   } catch (err) {
+    console.error("reportIssue error:", err);
     res.status(500).json({ message: "Failed to report issue" });
   }
 };
