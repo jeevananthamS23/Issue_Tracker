@@ -169,21 +169,6 @@ transform: translateY(-2px);
 transform: translateY(0);
 box-shadow: 0 3px 8px rgba(71, 118, 230, 0.2);
 }
-.message {
-text-align: center;
-margin-top: 20px;
-padding: 12px;
-border-radius: 8px;
-font-size: 14px;
-color: #475569;
-background-color: #f8fafc;
-border-left: 4px solid #4776E6;
-animation: fadeIn 0.5s ease;
-}
-@keyframes fadeIn {
-from { opacity: 0; transform: translateY(10px); }
-to { opacity: 1; transform: translateY(0); }
-}
 .toggle-prompt {
 text-align: center;
 margin-top: 25px;

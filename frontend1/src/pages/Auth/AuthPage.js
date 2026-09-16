@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import API from "../../api/api";
 import { Eye, EyeOff } from 'lucide-react';
 import "../AuthCss/AuthPage.css";
@@ -20,8 +21,7 @@ const AuthPage = ({ setIsAuthenticated }) => {
     adminKey: ""
   });
   
-  // Response message state
-  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showAdminKey, setShowAdminKey] = useState(false);
 
@@ -34,42 +34,42 @@ const AuthPage = ({ setIsAuthenticated }) => {
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
+    setSubmitting(true);
     try {
       // Determine the endpoint based on user type and action
       const endpoint = `/${isAdmin ? 'admin' : 'user'}/${isLogin ? 'login' : 'signup'}`;
-      
+
       // Create payload object based on form type
-      const payload = isAdmin 
+      const payload = isAdmin
         ? { email: form.email, password: form.password, ...(isLogin ? {} : { fullName: form.fullName }), adminKey: form.adminKey }
         : { email: form.email, password: form.password, ...(isLogin ? {} : { fullName: form.fullName }) };
-      
+
       const res = await API.post(endpoint, payload);
-      
+
       // Store token and show success message
       localStorage.setItem("token", res.data.accessToken);
       setIsAuthenticated(isAdmin); // Pass isAdmin flag to the parent component
-      setMessage(`${isAdmin ? 'Admin' : 'User'} ${isLogin ? 'login' : 'signup'} successful!`);
-      
+      toast.success(`${isAdmin ? 'Admin' : 'User'} ${isLogin ? 'login' : 'signup'} successful!`);
+
       // Redirect to dashboard after successful login/signup
       setTimeout(() => {
         navigate(isAdmin ? "/admin" : "/dashboard");
       }, 1000);
     } catch (err) {
-      setMessage(err.response?.data?.message || `${isLogin ? 'Login' : 'Signup'} failed`);
+      toast.error(err.response?.data?.message || `${isLogin ? 'Login' : 'Signup'} failed`);
+      setSubmitting(false);
     }
   };
 
   // Toggle between login and signup modes
   const toggleMode = () => {
     setIsLogin(!isLogin);
-    setMessage(""); // Clear any existing messages
   };
-  
+
   // Toggle between user and admin modes
   const toggleUserType = () => {
     setIsAdmin(!isAdmin);
-    setMessage(""); // Clear any existing messages
   };
 
   return (
@@ -169,13 +169,11 @@ const AuthPage = ({ setIsAuthenticated }) => {
 )}
         
         {/* Submit button */}
-        <button type="submit" className="submit-btn">
-          {isLogin ? 'Login' : 'Sign Up'}
+        <button type="submit" className="submit-btn" disabled={submitting}>
+          {submitting && <span className="btn-spinner"></span>}
+          {submitting ? "Please wait..." : (isLogin ? 'Login' : 'Sign Up')}
         </button>
-        
-        {/* Message display */}
-        {message && <p className="message">{message}</p>}
-        
+
         {/* Switch between login/signup */}
         <p className="toggle-prompt">
           {isLogin ? "Don't have an account? " : "Already have an account? "}

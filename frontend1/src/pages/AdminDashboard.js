@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { toast } from "react-toastify";
 import API, { getImageUrl } from "../api/api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -112,8 +113,7 @@ const AdminDashboard = () => {
   
   // State for form submission
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
-  
+
   // Default map center
   const defaultCenter = [11.342423, 77.728165]; // Erode City coordinates
   
@@ -252,8 +252,7 @@ const handleUpdateSubmit = async (e) => {
   if (!selectedIssue) return;
   
   setSubmitting(true);
-  setMessage("");
-  
+
   try {
     // Include internalNotes in the request payload
     const response = await API.patch(`/admin-dashboard/issues/${selectedIssue._id}`, {
@@ -261,17 +260,17 @@ const handleUpdateSubmit = async (e) => {
       department: updateData.department,
       internalNotes: updateData.internalNotes
     });
-    
+
     // Update issues in state
-    const updatedIssues = issues.map(issue => 
+    const updatedIssues = issues.map(issue =>
       issue._id === selectedIssue._id ? { ...issue, ...response.data } : issue
     );
-    
+
     setIssues(updatedIssues);
     setSelectedIssue({ ...selectedIssue, ...response.data });
-    setMessage("Issue updated successfully!");
+    toast.success("Issue updated successfully!");
   } catch (err) {
-    setMessage(err.response?.data?.message || "Failed to update issue. Please try again.");
+    toast.error(err.response?.data?.message || "Failed to update issue. Please try again.");
   } finally {
     setSubmitting(false);
   }
@@ -283,12 +282,6 @@ const handleUpdateSubmit = async (e) => {
         <h1>Admin Dashboard</h1>
         <p>Manage community reported issues</p>
       </div>
-      
-      {message && (
-        <div className={`message ${message.includes("success") ? "success" : "error"}`}>
-          {message}
-        </div>
-      )}
       
       <div className="admin-content">
         <div className="filters-panel">
@@ -400,7 +393,7 @@ const handleUpdateSubmit = async (e) => {
           <h2>Issues List ({filteredIssues.length})</h2>
           
           {loading ? (
-            <p className="loading">Loading issues...</p>
+            <div className="page-loading">Loading issues...</div>
           ) : filteredIssues.length === 0 ? (
             <p className="no-issues">No issues match your filters.</p>
           ) : (
@@ -527,11 +520,12 @@ const handleUpdateSubmit = async (e) => {
                       ></textarea>
                     </div>
                     
-                    <button 
-                      type="submit" 
+                    <button
+                      type="submit"
                       className="update-btn"
                       disabled={submitting}
                     >
+                      {submitting && <span className="btn-spinner"></span>}
                       {submitting ? "Updating..." : "Update Issue"}
                     </button>
                   </form>

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
 import Auth from "./pages/Auth/AuthPage";
 import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Navbar from "./pages/Navbar";
 import API from "./api/api";
+import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
 
 function App() {
@@ -56,10 +58,19 @@ function App() {
   return (
     <Router>
       <div className="app-container">
-        <Navbar 
-          isAuthenticated={isAuthenticated} 
+        <ToastContainer
+          position="top-right"
+          autoClose={3500}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          pauseOnHover
+          theme="colored"
+        />
+        <Navbar
+          isAuthenticated={isAuthenticated}
           userRole={userRole}
-          onLogout={handleLogout} 
+          onLogout={handleLogout}
         />
         <div className="content">
           <Routes>

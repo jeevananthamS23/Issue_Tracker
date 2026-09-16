@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import { toast } from "react-toastify";
 import API, { getImageUrl } from "../api/api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -44,8 +45,7 @@ const Dashboard = () => {
   
   // State for form submission
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
-  
+
   // Default map center (can be adjusted to user's location)
   const defaultCenter = [11.342423,77.728165 ]; // erode City coordinates
   
@@ -89,13 +89,12 @@ const Dashboard = () => {
     e.preventDefault();
     
     if (!markerPosition) {
-      setMessage("Please select a location on the map.");
+      toast.warn("Please select a location on the map.");
       return;
     }
-    
+
     setSubmitting(true);
-    setMessage("");
-    
+
     try {
       const formData = new FormData();
       formData.append("type", newIssue.type);
@@ -131,10 +130,10 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUserIssues(response.data);
-      
-      setMessage("Issue reported successfully!");
+
+      toast.success("Issue reported successfully!");
     } catch (err) {
-      setMessage(err.response?.data?.message || "Failed to report issue. Please try again.");
+      toast.error(err.response?.data?.message || "Failed to report issue. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -193,12 +192,6 @@ const Dashboard = () => {
           </button>
         )}
       </div>
-      
-      {message && (
-        <div className={`message ${message.includes("success") ? "success" : "error"}`}>
-          {message}
-        </div>
-      )}
       
       {isReporting && (
         <div className="report-form-container">
@@ -319,11 +312,12 @@ const Dashboard = () => {
               </span>
             </div>
             
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="submit-btn"
               disabled={!markerPosition || submitting}
             >
+              {submitting && <span className="btn-spinner"></span>}
               {submitting ? "Submitting..." : "Submit Report"}
             </button>
           </form>
@@ -334,7 +328,7 @@ const Dashboard = () => {
         <h2>Your Reported Issues</h2>
         
         {loading ? (
-          <p>Loading your issues...</p>
+          <div className="page-loading">Loading your issues...</div>
         ) : userIssues.length === 0 ? (
           <p>You haven't reported any issues yet.</p>
         ) : (

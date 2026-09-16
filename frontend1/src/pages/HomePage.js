@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { toast } from "react-toastify";
+import { ThumbsUp, Check } from "lucide-react";
 import API, { Auth, VoteService, getImageUrl } from "../api/api";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -80,32 +82,33 @@ const HomePage = () => {
   
   const handleVote = async (issueId) => {
     if (!isAuthenticated) {
-      alert("Please log in to vote on issues.");
+      toast.info("Please log in to vote on issues.");
       return;
     }
-    
+
     try {
       const response = await VoteService.voteForIssue(issueId);
-      
+
       if (response.data.success) {
         // Update vote count in the UI
-        setIssues(issues.map(issue => 
-          issue._id === issueId 
-            ? { ...issue, votes: response.data.votes } 
+        setIssues(issues.map(issue =>
+          issue._id === issueId
+            ? { ...issue, votes: response.data.votes }
             : issue
         ));
-        
+
         // Mark issue as voted by this user
         setVotedIssues(new Set([...votedIssues, issueId]));
+        toast.success("Vote recorded!");
       } else {
-        alert(response.data.message || "Error voting for issue.");
+        toast.error(response.data.message || "Error voting for issue.");
       }
     } catch (err) {
       console.error("Error voting:", err);
       if (err.response && err.response.data && err.response.data.message) {
-        alert(err.response.data.message);
+        toast.error(err.response.data.message);
       } else {
-        alert("Failed to submit your vote. Please try again.");
+        toast.error("Failed to submit your vote. Please try again.");
       }
     }
   };
@@ -164,7 +167,7 @@ const HomePage = () => {
                         {issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
                       </span>
                       <span className="votes">
-                        <i className="fas fa-thumbs-up"></i>votes: {issue.votes}
+                        <ThumbsUp size={14} /> votes: {issue.votes}
                       </span>
                     </div>
                     <p className="date">Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
@@ -174,14 +177,14 @@ const HomePage = () => {
                       {isAuthenticated ? (
                         hasVoted(issue._id) ? (
                           <button className="voted-button" disabled>
-                            <i className="fas fa-check"></i> Voted
+                            <Check size={14} /> Voted
                           </button>
                         ) : (
-                          <button 
+                          <button
                             className="vote-button"
                             onClick={() => handleVote(issue._id)}
                           >
-                            <i className="fas fa-thumbs-up"></i> Vote
+                            <ThumbsUp size={14} /> Vote
                           </button>
                         )
                       ) : (

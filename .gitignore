@@ -21,3 +21,4 @@ yarn-error.log*
 # Stray research/report documents not part of the project
 *.pdf
 *.docx
+Project.md
