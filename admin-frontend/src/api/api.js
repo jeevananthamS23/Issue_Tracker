@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const RAW_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const RAW_BASE_URL = process.env.REACT_APP_API_URL || "https://issue-tracker-frnb.onrender.com";
 const BASE_URL = RAW_BASE_URL.replace(/\/+$/, "");
 
 const API = axios.create({

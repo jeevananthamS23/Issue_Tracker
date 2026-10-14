@@ -151,15 +151,50 @@ async function runCli() {
   console.log(" CIVICVISION AI — ADMIN PROVISIONING CLI");
   console.log("=============================================\n");
 
-  try {
-    const fullName = await promptVisible("Enter administrator full name: ");
-    const email = await promptVisible("Enter administrator email: ");
-    const password = await promptHidden("Enter administrator password: ");
-    const confirmPassword = await promptHidden("Confirm administrator password: ");
+  // Support optional CLI flags for non-sensitive fields: --name "..." --email "..."
+  const args = process.argv.slice(2);
+  let cliName = "";
+  let cliEmail = "";
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === "--name" || args[i] === "-n") && args[i + 1]) {
+      cliName = args[++i];
+    } else if ((args[i] === "--email" || args[i] === "-e") && args[i + 1]) {
+      cliEmail = args[++i];
+    }
+  }
 
-    if (password !== confirmPassword) {
-      console.error("\n[ERROR] Passwords do not match.");
-      process.exit(1);
+  try {
+    let fullName = cliName;
+    while (!fullName || !fullName.trim()) {
+      fullName = await promptVisible("Enter administrator full name: ");
+      if (!fullName || !fullName.trim()) {
+        console.log("  [!] Full name cannot be empty. Please enter your name.");
+      }
+    }
+
+    let email = cliEmail;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    while (!email || !emailRegex.test(email.trim().toLowerCase())) {
+      email = await promptVisible("Enter administrator email: ");
+      if (!email || !emailRegex.test(email.trim().toLowerCase())) {
+        console.log("  [!] Please enter a valid email address (e.g., admin@domain.com).");
+      }
+    }
+
+    let password = "";
+    while (!password) {
+      password = await promptHidden("Enter administrator password: ");
+      if (!password || password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+        console.log("  [!] Password must be at least 8 characters and include at least one letter and one number.");
+        password = "";
+        continue;
+      }
+
+      const confirmPassword = await promptHidden("Confirm administrator password: ");
+      if (password !== confirmPassword) {
+        console.log("  [!] Passwords do not match. Please try entering password again.\n");
+        password = "";
+      }
     }
 
     console.log("\nConnecting to database and provisioning account...");

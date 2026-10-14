@@ -1,26 +1,39 @@
 // backend1/config/cors.js
 
+function parseOrigins(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return String(val)
+    .split(",")
+    .map((s) => s.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
 function getCorsOrigins(env = process.env) {
   const isProduction = env.NODE_ENV === "production";
 
-  // Configured production origins
-  const productionOrigins = [
-    env.CITIZEN_FRONTEND_ORIGIN || "https://issue-tracker-kappa-pearl.vercel.app",
-    env.ADMIN_FRONTEND_ORIGIN,
-  ].filter(Boolean);
+  // Configured production origins from env vars
+  const configured = [
+    ...parseOrigins(env.CITIZEN_FRONTEND_ORIGIN || "https://issue-tracker-kappa-pearl.vercel.app"),
+    ...parseOrigins(env.ADMIN_FRONTEND_ORIGIN || "https://admin-frontend-beta-liard.vercel.app"),
+    ...parseOrigins(env.ALLOWED_ORIGINS),
+    ...parseOrigins(env.CORS_ORIGIN),
+  ];
+
+  const uniqueProductionOrigins = Array.from(new Set(configured));
 
   if (isProduction) {
-    return productionOrigins;
+    return uniqueProductionOrigins;
   }
 
   // In non-production (development, test), include localhost origins
-  return [
-    ...productionOrigins,
+  return Array.from(new Set([
+    ...uniqueProductionOrigins,
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
-  ];
+  ]));
 }
 
 function createCorsOptions(env = process.env) {
