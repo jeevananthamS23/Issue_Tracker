@@ -10,8 +10,6 @@ const AuthPage = ({ setIsAuthenticated }) => {
   
   // State to track if user is on login or signup view
   const [isLogin, setIsLogin] = useState(true);
-  // State to track if user is admin or regular user (admin mode only allowed for login)
-  const [isAdmin, setIsAdmin] = useState(false);
   
   // Form state
   const [form, setForm] = useState({
@@ -32,17 +30,11 @@ const AuthPage = ({ setIsAuthenticated }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isAdmin && !isLogin) {
-      toast.error("Public administrator registration is disabled.");
-      return;
-    }
-
     setSubmitting(true);
     try {
-      // Determine the endpoint based on user type and action
-      const endpoint = `/${isAdmin ? 'admin' : 'user'}/${isLogin ? 'login' : 'signup'}`;
+      const endpoint = `/user/${isLogin ? 'login' : 'signup'}`;
 
-      // Create payload object based on form type (email & password for login/admin, fullName added for citizen signup)
+      // Create payload (fullName added for citizen signup)
       const payload = isLogin
         ? { email: form.email, password: form.password }
         : { fullName: form.fullName, email: form.email, password: form.password };
@@ -51,12 +43,12 @@ const AuthPage = ({ setIsAuthenticated }) => {
 
       // Store token and show success message
       localStorage.setItem("token", res.data.accessToken);
-      setIsAuthenticated(isAdmin); // Pass isAdmin flag to the parent component
-      toast.success(`${isAdmin ? 'Admin' : 'User'} ${isLogin ? 'login' : 'signup'} successful!`);
+      setIsAuthenticated(false); // Citizen user
+      toast.success(isLogin ? "Citizen login successful!" : "Citizen registration successful!");
 
       // Redirect to dashboard after successful login/signup
       setTimeout(() => {
-        navigate(isAdmin ? "/admin" : "/dashboard");
+        navigate("/dashboard");
       }, 1000);
     } catch (err) {
       toast.error(err.response?.data?.message || `${isLogin ? 'Login' : 'Signup'} failed`);
@@ -67,15 +59,6 @@ const AuthPage = ({ setIsAuthenticated }) => {
   // Toggle between login and signup modes
   const toggleMode = (loginMode) => {
     setIsLogin(loginMode);
-    if (!loginMode) {
-      // Admin accounts cannot be created publicly; automatically turn off admin mode on signup
-      setIsAdmin(false);
-    }
-  };
-
-  // Toggle between user and admin modes (only available in login mode)
-  const toggleUserType = () => {
-    setIsAdmin(!isAdmin);
   };
 
   return (
@@ -95,20 +78,8 @@ const AuthPage = ({ setIsAuthenticated }) => {
         </button>
       </div>
       
-      {isLogin && (
-        <div className="user-type-toggle">
-          <input
-            type="checkbox"
-            id="adminToggle"
-            checked={isAdmin}
-            onChange={toggleUserType}
-          />
-          <label htmlFor="adminToggle">Admin Mode</label>
-        </div>
-      )}
-      
       <form onSubmit={handleSubmit}>
-        <h2>{isAdmin ? 'Admin Login' : (isLogin ? 'Citizen Login' : 'Citizen Sign Up')}</h2>
+        <h2>{isLogin ? 'Citizen Login' : 'Citizen Sign Up'}</h2>
         
         {/* Full Name field (only for citizen signup) */}
         {!isLogin && (

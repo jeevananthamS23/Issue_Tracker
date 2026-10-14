@@ -12,11 +12,7 @@ const Navbar = ({ isAuthenticated, userRole, onLogout }) => {
         <Link to="/" className="nav-link">Home</Link>
         {isAuthenticated ? (
           <>
-            {userRole === "admin" ? (
-              <Link to="/admin" className="nav-link">Admin Dashboard</Link>
-            ) : (
-              <Link to="/dashboard" className="nav-link">Dashboard</Link>
-            )}
+            <Link to="/dashboard" className="nav-link">Dashboard</Link>
             <button onClick={onLogout} className="nav-button">Logout</button>
           </>
         ) : (

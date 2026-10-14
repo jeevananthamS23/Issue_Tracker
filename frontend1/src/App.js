@@ -99,7 +99,7 @@ function App() {
               path="/auth" 
               element={
                 isAuthenticated ? 
-                  (userRole === "admin" ? <Navigate to="/admin" /> : <Navigate to="/dashboard" />) : 
+                  <Navigate to="/dashboard" /> : 
                   <Auth setIsAuthenticated={handleAuthentication} />
               } 
             />
@@ -107,18 +107,12 @@ function App() {
               path="/dashboard" 
               element={
                 isAuthenticated ? 
-                  (userRole === "admin" ? <Navigate to="/admin" /> : <Dashboard />) : 
+                  <Dashboard /> : 
                   <Navigate to="/auth" />
               } 
             />
-            <Route 
-              path="/admin" 
-              element={
-                isAuthenticated && userRole === "admin" ? 
-                  <AdminDashboard /> : 
-                  (isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/auth" />)
-              } 
-            />
+            {/* Legacy admin route redirects to dashboard in citizen app */}
+            <Route path="/admin" element={<Navigate to="/dashboard" />} />
           </Routes>
         </div>
       </div>
