@@ -4,7 +4,6 @@ import { ToastContainer } from "react-toastify";
 import Auth from "./pages/Auth/AuthPage";
 import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
-import AdminDashboard from "./pages/AdminDashboard";
 import Navbar from "./pages/Navbar";
 import API from "./api/api";
 import "react-toastify/dist/ReactToastify.css";
