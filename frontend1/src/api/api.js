@@ -1,13 +1,14 @@
 import axios from "axios";
 
-const BASE_URL = "https://issue-tracker-frnb.onrender.com"; // your deployed backend
+const RAW_BASE_URL = process.env.REACT_APP_API_URL || "https://issue-tracker-frnb.onrender.com";
+const BASE_URL = RAW_BASE_URL.replace(/\/+$/, "");
 
 const API = axios.create({
   baseURL: `${BASE_URL}/api`,
   headers: {
     "Content-Type": "application/json",
   },
-  withCredentials: true // important for auth cookies
+  withCredentials: true // important for CORS compatibility
 });
 
 // Cloudinary URLs are already absolute; older issues stored a relative
@@ -35,7 +36,10 @@ API.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem("token");
-      window.location.href = "/auth";
+      // Prevent infinite redirect loops if 401 happens on the /auth page itself
+      if (typeof window !== "undefined" && window.location.pathname !== "/auth") {
+        window.location.href = "/auth";
+      }
     }
     return Promise.reject(error);
   }

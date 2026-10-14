@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/phase1_security.test.js",
+    "admin:create": "node scripts/createAdmin.js"
   },
   "keywords": [],
   "author": "",

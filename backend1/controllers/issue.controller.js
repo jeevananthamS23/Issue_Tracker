@@ -3,7 +3,7 @@ const path = require("path");
 
 exports.getAllIssues = async (req, res) => {
   try {
-    const issues = await Issue.find().sort({ createdAt: -1 });
+    const issues = await Issue.find().select("-internalNotes").sort({ createdAt: -1 });
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch issues" });
@@ -12,7 +12,7 @@ exports.getAllIssues = async (req, res) => {
 
 exports.getUserIssues = async (req, res) => {
   try {
-    const issues = await Issue.find({ userId: req.user.userId });
+    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes");
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch user issues" });

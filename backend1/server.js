@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const multer = require("multer");
 
 const userRoutes = require("./routes/userAuth.routes");
 const adminRoutes = require("./routes/adminAuth.routes");
@@ -9,15 +10,11 @@ const issueRoutes = require("./routes/issue.routes");
 const adminDashboardRoutes = require("./routes/adminDashboard.routes");
 const voteRoutes = require("./routes/vote.routes");
 
+const { createCorsOptions } = require("./config/cors");
+
 const app = express();
 
-// ----- CORS Middleware (Production Only) -----
-app.use(cors({
-  origin: "https://issue-tracker-kappa-pearl.vercel.app", // your deployed frontend (Vercel)
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+app.use(cors(createCorsOptions()));
 
 app.use(express.json());
 app.use("/uploads", express.static("uploads")); // Static path for uploaded images
@@ -42,8 +39,26 @@ app.use("/api/issues", issueRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/votes", voteRoutes);
 
-// ----- Error handler (catches upload/multer/cloudinary errors too) -----
+// ----- Error Handler -----
 app.use((err, req, res, next) => {
+  // CORS origin rejection
+  if (err.code === "CORS_NOT_ALLOWED" || (err.message && err.message.startsWith("CORS policy violation"))) {
+    return res.status(403).json({ error: true, message: err.message });
+  }
+
+  // Multer file upload errors
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: true, message: "File size exceeds the 5MB limit." });
+    }
+    return res.status(400).json({ error: true, message: `Upload error: ${err.message}` });
+  }
+
+  // Custom MIME-type, extension, or binary signature validation error
+  if (err.code === "INVALID_FILE_TYPE" || err.code === "INVALID_IMAGE_SIGNATURE") {
+    return res.status(400).json({ error: true, message: err.message });
+  }
+
   console.error("Unhandled error:", err);
   res.status(500).json({ error: true, message: err.message || "Internal server error" });
 });

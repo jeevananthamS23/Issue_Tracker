@@ -1,0 +1,3 @@
+# Private administrative console - disallow crawling
+User-agent: *
+Disallow: /

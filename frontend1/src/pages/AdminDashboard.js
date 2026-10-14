@@ -134,11 +134,11 @@ const AdminDashboard = () => {
     });
   };
   
-  // Fetch all issues
+  // Fetch all issues via protected admin endpoint
   useEffect(() => {
     const fetchIssues = async () => {
       try {
-        const response = await API.get("/issues");
+        const response = await API.get("/admin-dashboard/issues");
         setIssues(response.data);
         setFilteredIssues(response.data);
         setLoading(false);

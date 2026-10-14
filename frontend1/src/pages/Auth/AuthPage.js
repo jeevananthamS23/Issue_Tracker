@@ -10,21 +10,18 @@ const AuthPage = ({ setIsAuthenticated }) => {
   
   // State to track if user is on login or signup view
   const [isLogin, setIsLogin] = useState(true);
-  // State to track if user is admin or regular user
+  // State to track if user is admin or regular user (admin mode only allowed for login)
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // Form state with all possible fields
+  // Form state
   const [form, setForm] = useState({
     fullName: "",
     email: "",
-    password: "",
-    adminKey: ""
+    password: ""
   });
   
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showAdminKey, setShowAdminKey] = useState(false);
-
 
   // Handle form input changes
   const handleChange = (e) => {
@@ -35,15 +32,20 @@ const AuthPage = ({ setIsAuthenticated }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (isAdmin && !isLogin) {
+      toast.error("Public administrator registration is disabled.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       // Determine the endpoint based on user type and action
       const endpoint = `/${isAdmin ? 'admin' : 'user'}/${isLogin ? 'login' : 'signup'}`;
 
-      // Create payload object based on form type
-      const payload = isAdmin
-        ? { email: form.email, password: form.password, ...(isLogin ? {} : { fullName: form.fullName }), adminKey: form.adminKey }
-        : { email: form.email, password: form.password, ...(isLogin ? {} : { fullName: form.fullName }) };
+      // Create payload object based on form type (email & password for login/admin, fullName added for citizen signup)
+      const payload = isLogin
+        ? { email: form.email, password: form.password }
+        : { fullName: form.fullName, email: form.email, password: form.password };
 
       const res = await API.post(endpoint, payload);
 
@@ -63,11 +65,15 @@ const AuthPage = ({ setIsAuthenticated }) => {
   };
 
   // Toggle between login and signup modes
-  const toggleMode = () => {
-    setIsLogin(!isLogin);
+  const toggleMode = (loginMode) => {
+    setIsLogin(loginMode);
+    if (!loginMode) {
+      // Admin accounts cannot be created publicly; automatically turn off admin mode on signup
+      setIsAdmin(false);
+    }
   };
 
-  // Toggle between user and admin modes
+  // Toggle between user and admin modes (only available in login mode)
   const toggleUserType = () => {
     setIsAdmin(!isAdmin);
   };
@@ -77,32 +83,34 @@ const AuthPage = ({ setIsAuthenticated }) => {
       <div className="auth-tabs">
         <button 
           className={`tab ${isLogin ? 'active' : ''}`} 
-          onClick={() => setIsLogin(true)}
+          onClick={() => toggleMode(true)}
         >
           Login
         </button>
         <button 
           className={`tab ${!isLogin ? 'active' : ''}`} 
-          onClick={() => setIsLogin(false)}
+          onClick={() => toggleMode(false)}
         >
           Sign Up
         </button>
       </div>
       
-      <div className="user-type-toggle">
-        <input
-          type="checkbox"
-          id="adminToggle"
-          checked={isAdmin}
-          onChange={toggleUserType}
-        />
-        <label htmlFor="adminToggle">Admin Mode</label>
-      </div>
+      {isLogin && (
+        <div className="user-type-toggle">
+          <input
+            type="checkbox"
+            id="adminToggle"
+            checked={isAdmin}
+            onChange={toggleUserType}
+          />
+          <label htmlFor="adminToggle">Admin Mode</label>
+        </div>
+      )}
       
       <form onSubmit={handleSubmit}>
-        <h2>{isAdmin ? 'Admin' : 'User'} {isLogin ? 'Login' : 'Signup'}</h2>
+        <h2>{isAdmin ? 'Admin Login' : (isLogin ? 'Citizen Login' : 'Citizen Sign Up')}</h2>
         
-        {/* Full Name field (only for signup) */}
+        {/* Full Name field (only for citizen signup) */}
         {!isLogin && (
           <div className="form-group">
             <input
@@ -129,44 +137,23 @@ const AuthPage = ({ setIsAuthenticated }) => {
         </div>
         
         {/* Password field (for all forms) */}
-      <div className="form-group password-field">
-             <input
-           type={showPassword ? "text" : "password"}
-          name="password"
-          placeholder="Password"
-          value={form.password}
-          onChange={handleChange}
-          required
-         />
-         <button
-         type="button"
-         className="password-toggle"
-         onClick={() => setShowPassword(!showPassword)}
-        >
-    {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-  </button>
-</div>
-        
-        {/* Admin Key field (only for admin) */}
-       {isAdmin && (
-  <div className="form-group password-field">
-    <input
-      type={showAdminKey ? "text" : "password"}
-      name="adminKey"
-      placeholder="Admin Key"
-      value={form.adminKey}
-      onChange={handleChange}
-      required
-    />
-    <button
-      type="button"
-      className="password-toggle"
-      onClick={() => setShowAdminKey(!showAdminKey)}
-    >
-      {showAdminKey ? <Eye size={18} /> : <EyeOff size={18} />}
-    </button>
-  </div>
-)}
+        <div className="form-group password-field">
+          <input
+            type={showPassword ? "text" : "password"}
+            name="password"
+            placeholder="Password"
+            value={form.password}
+            onChange={handleChange}
+            required
+          />
+          <button
+            type="button"
+            className="password-toggle"
+            onClick={() => setShowPassword(!showPassword)}
+          >
+            {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+          </button>
+        </div>
         
         {/* Submit button */}
         <button type="submit" className="submit-btn" disabled={submitting}>
@@ -180,7 +167,7 @@ const AuthPage = ({ setIsAuthenticated }) => {
           <button 
             type="button" 
             className="toggle-btn" 
-            onClick={toggleMode}
+            onClick={() => toggleMode(!isLogin)}
           >
             {isLogin ? 'Sign Up' : 'Login'}
           </button>

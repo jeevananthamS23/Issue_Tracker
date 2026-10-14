@@ -21,20 +21,40 @@ function App() {
       const token = localStorage.getItem("token");
       if (token) {
         try {
-          // Fetch user profile to determine role
+          // Attempt to fetch citizen profile
           const response = await API.get("/user/profile");
           setIsAuthenticated(true);
           setUserRole(response.data.isAdmin ? "admin" : "user");
         } catch (error) {
-          // Handle invalid token
-          localStorage.removeItem("token");
-          setIsAuthenticated(false);
-          setUserRole(null);
+          // If citizen route returns 403 Forbidden, the token belongs to an administrator
+          if (error.response && error.response.status === 403) {
+            try {
+              await API.get("/admin/profile");
+              setIsAuthenticated(true);
+              setUserRole("admin");
+              setLoading(false);
+              return;
+            } catch (adminErr) {
+              if (adminErr.response && (adminErr.response.status === 401 || adminErr.response.status === 403)) {
+                localStorage.removeItem("token");
+                setIsAuthenticated(false);
+                setUserRole(null);
+              }
+            }
+          } else if (error.response && error.response.status === 401) {
+            // Invalid or expired credentials: clear session
+            localStorage.removeItem("token");
+            setIsAuthenticated(false);
+            setUserRole(null);
+          } else {
+            // Server outage or network error: preserve token so user isn't logged out
+            console.warn("Could not verify session due to a network error:", error.message);
+          }
         }
       }
       setLoading(false);
     };
-    
+
     checkAuthStatus();
   }, []);
 

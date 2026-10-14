@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders community issue reporter logo or title', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  const brandElements = screen.getAllByText(/Community Issue Reporter/i);
+  expect(brandElements.length).toBeGreaterThanOrEqual(1);
 });
