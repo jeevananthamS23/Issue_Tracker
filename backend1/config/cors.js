@@ -36,6 +36,21 @@ function getCorsOrigins(env = process.env) {
   ]));
 }
 
+function isAllowedDynamicOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    // Allow any Vercel deployment preview or branch URL for this project
+    if (host.endsWith(".vercel.app") && (host.includes("issue-tracker") || host.includes("admin-frontend"))) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 function createCorsOptions(env = process.env) {
   return {
     origin: (origin, callback) => {
@@ -43,7 +58,7 @@ function createCorsOptions(env = process.env) {
       if (!origin) return callback(null, true);
 
       const allowed = getCorsOrigins(env);
-      if (allowed.includes(origin)) {
+      if (allowed.includes(origin) || isAllowedDynamicOrigin(origin)) {
         return callback(null, true);
       }
 
