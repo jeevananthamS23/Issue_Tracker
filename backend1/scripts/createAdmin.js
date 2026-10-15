@@ -11,6 +11,13 @@
  */
 
 require("dotenv").config();
+const dns = require("dns");
+try {
+  // Use public DNS to resolve MongoDB Atlas SRV records when local/ISP DNS refuses SRV queries
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch {
+  // Fall back to system DNS if custom servers cannot be set
+}
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const readline = require("readline");
