@@ -222,6 +222,26 @@ class TestAiServiceSecurity(unittest.TestCase):
             # Request with correct Bearer token -> passes without exception
             verify_api_key(x_api_key=None, authorization="Bearer super_secret_test_key_123")
 
+    def test_multipart_upload_file_endpoint(self):
+        """POST /embed-upload with multipart/form-data must process valid image upload."""
+        import asyncio
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+        from main import embed_image_upload
+
+        # Create valid 10x10 PNG bytes
+        img = Image.new("RGB", (10, 10), color="green")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        upload_file = StarletteUploadFile(filename="test.png", file=io.BytesIO(png_bytes))
+
+        resp = asyncio.run(embed_image_upload(upload_file))
+        self.assertEqual(resp.dimensions, 512)
+        self.assertEqual(len(resp.embedding), 512)
+        self.assertEqual(resp.model, DETERMINISTIC_MODEL_NAME)
+        self.assertFalse(resp.cached)
+
 
 if __name__ == "__main__":
     unittest.main()
