@@ -169,13 +169,62 @@ const issueSchema = new mongoose.Schema(
     similarityScore: {
       type: Number
     },
+    needsDuplicateReview: {
+      type: Boolean,
+      default: false
+    },
+    needsClassificationReview: {
+      type: Boolean,
+      default: false
+    },
+    classificationReviewResolution: {
+      type: String,
+      enum: ["none", "confirmed_category", "reclassified"],
+      default: "none"
+    },
     needsReview: {
       type: Boolean,
       default: false
     },
+    severity: {
+      type: Number,
+      min: 1,
+      max: 10
+    },
+    classificationConfidence: {
+      type: Number,
+      min: 0,
+      max: 1,
+      select: false // Admin/internal only: excluded from public queries and citizen responses
+    },
     aiDiagnostic: {
-      serviceStatus: { type: String },
-      message: { type: String }
+      type: new mongoose.Schema(
+        {
+          serviceStatus: { type: String },
+          message: { type: String },
+          model: { type: String },
+          classificationStatus: { type: String },
+          classificationModel: { type: String }
+        },
+        { _id: false }
+      ),
+      select: false // Admin/internal only: excluded from public queries and citizen responses
+    },
+    // Administrative duplicate review & resolution audit fields (Phase 3.4A)
+    reviewResolution: {
+      type: String,
+      enum: ["none", "confirmed_duplicate", "dismissed_unique"],
+      default: "none"
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin"
+    },
+    reviewedAt: {
+      type: Date
+    },
+    reviewNotes: {
+      type: String
     }
   },
   {
@@ -185,6 +234,14 @@ const issueSchema = new mongoose.Schema(
     toObject: { virtuals: true }
   }
 );
+
+// Pre-save hook: derive consolidated needsReview from outstanding review reasons
+issueSchema.pre("save", function (next) {
+  if (this.isModified("needsDuplicateReview") || this.isModified("needsClassificationReview")) {
+    this.needsReview = Boolean(this.needsDuplicateReview || this.needsClassificationReview);
+  }
+  next();
+});
 
 // Geospatial 2dsphere index for spherical geometry queries ($near, $geoWithin, DBSCAN clustering)
 issueSchema.index({ location: "2dsphere" });

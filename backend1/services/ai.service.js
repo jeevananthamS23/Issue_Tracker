@@ -393,6 +393,103 @@ async function assessIssueDuplicates(options = {}) {
   };
 }
 
+/**
+ * Calls FastAPI microservice to classify civic defect and compute severity estimate.
+ * Enforces independent bounded timeout (default 2500ms) with AbortSignal.
+ * Validates severity range [1, 10] and confidence range [0, 1].
+ * Soft-failure guarantee: Returns { success: false, ... } instead of throwing,
+ * so issue creation is NEVER blocked by classification outage or timeout.
+ *
+ * @param {string} imageUrl - Public image URL
+ * @param {object} options - Optional candidateCategory, timeoutMs
+ * @returns {Promise<{
+ *   success: boolean,
+ *   category?: string | null,
+ *   confidence?: number | null,
+ *   severity?: number | null,
+ *   suggestedDepartment?: string | null,
+ *   model?: string,
+ *   mode?: string,
+ *   isTrainedModel?: boolean,
+ *   severityMode?: string | null,
+ *   status?: string,
+ *   error?: string
+ * }>}
+ */
+async function classifyIssueImage(imageUrl, options = {}) {
+  const { candidateCategory, timeoutMs = 2500 } = options;
+
+  if (!imageUrl || typeof imageUrl !== "string") {
+    return { success: false, error: "Image URL must be a non-empty string" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (process.env.AI_SERVICE_API_KEY) {
+      headers["X-API-Key"] = process.env.AI_SERVICE_API_KEY.trim();
+    }
+
+    const payload = {
+      image_url: imageUrl,
+      candidate_category: candidateCategory || null
+    };
+
+    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/classify-issue`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return { success: false, error: `AI service returned HTTP ${response.status}: ${errText}` };
+    }
+
+    const data = await response.json();
+
+    // Validate severity bounds [1.0, 10.0]
+    let validatedSeverity = null;
+    if (typeof data.severity === "number" && Number.isFinite(data.severity)) {
+      if (data.severity >= 1.0 && data.severity <= 10.0) {
+        validatedSeverity = Math.round(data.severity * 10) / 10;
+      }
+    }
+
+    // Validate confidence bounds [0.0, 1.0]
+    let validatedConfidence = null;
+    if (typeof data.confidence === "number" && Number.isFinite(data.confidence)) {
+      if (data.confidence >= 0.0 && data.confidence <= 1.0) {
+        validatedConfidence = Math.round(data.confidence * 1000) / 1000;
+      }
+    }
+
+    return {
+      success: true,
+      category: data.category || null,
+      confidence: validatedConfidence,
+      severity: validatedSeverity,
+      suggestedDepartment: data.suggested_department || null,
+      model: data.model || "unknown",
+      mode: data.mode || "unknown",
+      isTrainedModel: Boolean(data.is_trained_model),
+      severityMode: data.severity_mode || null,
+      status: data.status || "unverified"
+    };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      return { success: false, error: `AI service classification request timed out after ${timeoutMs}ms` };
+    }
+    return { success: false, error: `Failed to connect to AI classification service: ${err.message}` };
+  }
+}
+
 module.exports = {
   cosineSimilarity,
   validateEmbeddingVector,
@@ -400,6 +497,7 @@ module.exports = {
   fetchClipEmbedding,
   compareEmbeddingWithCandidates,
   assessIssueDuplicates,
+  classifyIssueImage,
   DEFAULT_SIMILARITY_THRESHOLD,
   EXPECTED_EMBEDDING_DIM
 };

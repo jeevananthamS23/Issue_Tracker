@@ -108,7 +108,7 @@ async function findNearbyIssues(options = {}) {
   }
 
   const issues = await Issue.find(query)
-    .select("-internalNotes")
+    .select("-internalNotes -aiDiagnostic")
     .limit(maxLimit);
 
   // Annotate with exact geodesic distance

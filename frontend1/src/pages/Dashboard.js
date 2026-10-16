@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from "react-leaflet";
 import { toast } from "react-toastify";
 import API, { getImageUrl } from "../api/api";
+import { extractExifGps, formatCoordinates } from "../utils/exifParser";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -20,12 +21,23 @@ let defaultIcon = L.icon({
 L.Marker.prototype.options.icon = defaultIcon;
 
 // Map click handler component
-const AddMarkerOnClick = ({ setMarkerPosition }) => {
+const AddMarkerOnClick = ({ onLocationSelect }) => {
   useMapEvents({
     click: (e) => {
-      setMarkerPosition([e.latlng.lat, e.latlng.lng]);
+      onLocationSelect([e.latlng.lat, e.latlng.lng], "manual");
     },
   });
+  return null;
+};
+
+// Map view updater when marker is placed programmatically or manually
+const MapViewUpdater = ({ position }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (position && typeof position[0] === "number" && typeof position[1] === "number") {
+      map.flyTo(position, 15, { animate: true, duration: 1.2 });
+    }
+  }, [position, map]);
   return null;
 };
 
@@ -36,6 +48,9 @@ const Dashboard = () => {
   
   // State for creating new issue
   const [markerPosition, setMarkerPosition] = useState(null);
+  const [locationSource, setLocationSource] = useState(null); // 'exif' | 'manual' | null
+  const [locationFeedback, setLocationFeedback] = useState(null);
+  const [exifExtracting, setExifExtracting] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [newIssue, setNewIssue] = useState({
     type: "pothole",
@@ -46,8 +61,8 @@ const Dashboard = () => {
   // State for form submission
   const [submitting, setSubmitting] = useState(false);
 
-  // Default map center (can be adjusted to user's location)
-  const defaultCenter = [11.342423,77.728165 ]; // erode City coordinates
+  // Default map center (initial viewport view only, NEVER used as default incident location)
+  const defaultCenter = [11.342423, 77.728165]; // Erode City coordinates
   
   // Ref for file input
   const fileInputRef = useRef(null);
@@ -70,17 +85,56 @@ const Dashboard = () => {
     fetchUserIssues();
   }, []);
   
-  
   // Handle form input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setNewIssue({ ...newIssue, [name]: value });
   };
+
+  // Handle location selection from map click
+  const handleLocationSelect = (coords, source = "manual") => {
+    setMarkerPosition(coords);
+    setLocationSource(source);
+    setLocationFeedback({
+      type: "manual",
+      message: `📍 Location placed manually on map: ${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}. Click anywhere on the map to adjust.`
+    });
+  };
   
-  // Handle image upload
-  const handleImageChange = (e) => {
+  // Handle image upload and safe local EXIF extraction
+  const handleImageChange = async (e) => {
     if (e.target.files && e.target.files[0]) {
-      setNewIssue({ ...newIssue, image: e.target.files[0] });
+      const file = e.target.files[0];
+      setNewIssue(prev => ({ ...prev, image: file }));
+
+      setExifExtracting(true);
+      try {
+        const gpsResult = await extractExifGps(file);
+        if (gpsResult.success && typeof gpsResult.latitude === "number" && typeof gpsResult.longitude === "number") {
+          setMarkerPosition([gpsResult.latitude, gpsResult.longitude]);
+          setLocationSource("exif");
+          setLocationFeedback({
+            type: "exif",
+            message: `📍 GPS coordinates extracted from photo EXIF metadata: [${gpsResult.latitude}, ${gpsResult.longitude}]. You can confirm or click anywhere on the map to adjust.`
+          });
+          toast.info(
+            `📍 Photo GPS detected: ${formatCoordinates(gpsResult.latitude, gpsResult.longitude)}. Placed pin on map.`
+          );
+        } else {
+          // Do NOT substitute default coordinates if no EXIF is found!
+          // Preserve any existing manual pin if user already placed one
+          if (!markerPosition) {
+            setLocationFeedback({
+              type: "no_exif",
+              message: "ℹ️ No GPS coordinates found in image metadata. Please click on the map to place the issue pin manually."
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("EXIF extraction notice:", err);
+      } finally {
+        setExifExtracting(false);
+      }
     }
   };
   
@@ -123,6 +177,9 @@ const Dashboard = () => {
         image: null,
       });
       setMarkerPosition(null);
+      setLocationSource(null);
+      setLocationFeedback(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setIsReporting(false);
       
       // Refresh user issues
@@ -186,6 +243,9 @@ const Dashboard = () => {
             onClick={() => {
               setIsReporting(false);
               setMarkerPosition(null);
+              setLocationSource(null);
+              setLocationFeedback(null);
+              if (fileInputRef.current) fileInputRef.current.value = "";
             }}
           >
             Cancel Report
@@ -196,7 +256,28 @@ const Dashboard = () => {
       {isReporting && (
         <div className="report-form-container">
           <div className="map-instructions">
-            <p>Click on the map to select the issue location:</p>
+            <p>Select the issue location on the map (or upload a geotagged photo):</p>
+            {exifExtracting && (
+              <div className="location-banner analyzing" data-testid="exif-analyzing">
+                <span>🔍 Reading photo metadata for EXIF GPS coordinates...</span>
+              </div>
+            )}
+            {locationFeedback && (
+              <div className={`location-banner ${locationFeedback.type}`} data-testid="location-feedback-banner">
+                <span className="feedback-text">{locationFeedback.message}</span>
+                {locationSource === "exif" && (
+                  <span className="source-tag exif-tag">Photo EXIF GPS</span>
+                )}
+                {locationSource === "manual" && (
+                  <span className="source-tag manual-tag">Manual Pin</span>
+                )}
+              </div>
+            )}
+            {!markerPosition && !locationFeedback && !exifExtracting && (
+              <div className="location-banner empty" data-testid="location-empty-banner">
+                <span>⚠️ No location selected yet. Click on the map to place a pin, or upload a photo containing EXIF GPS.</span>
+              </div>
+            )}
           </div>
           
           <div className="map-container">
@@ -210,11 +291,18 @@ const Dashboard = () => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
               
-              <AddMarkerOnClick setMarkerPosition={setMarkerPosition} />
+              <AddMarkerOnClick onLocationSelect={handleLocationSelect} />
+              <MapViewUpdater position={markerPosition} />
               
               {markerPosition && (
                 <Marker position={markerPosition}>
-                  <Popup>New issue location</Popup>
+                  <Popup>
+                    <div>
+                      <strong>Incident Location</strong><br />
+                      Lat: {markerPosition[0].toFixed(5)}, Lng: {markerPosition[1].toFixed(5)}<br />
+                      <em>Source: {locationSource === "exif" ? "Photo EXIF GPS" : "Manual Pin"}</em>
+                    </div>
+                  </Popup>
                 </Marker>
               )}
             </MapContainer>
@@ -310,6 +398,11 @@ const Dashboard = () => {
               <span className="file-name">
                 {newIssue.image ? newIssue.image.name : "No file chosen"}
               </span>
+              {locationSource === "exif" && (
+                <span className="exif-badge success" data-testid="exif-success-badge">
+                  📍 EXIF GPS Coordinates Detected
+                </span>
+              )}
             </div>
             
             <button

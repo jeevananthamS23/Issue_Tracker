@@ -66,6 +66,131 @@ _clip_processor = None
 _model_load_attempted = False
 _model_load_error = None
 
+# Civic classification model constants & references (Phase 4.1B)
+CIVIC_MODEL_PATH = os.getenv("CIVIC_MODEL_PATH", "").strip()
+CIVIC_CATEGORIES = [
+    "pothole",
+    "road_damage",
+    "garbage",
+    "street_light",
+    "water_leak",
+    "sewage",
+    "traffic_signal",
+    "other"
+]
+
+CANONICAL_DEPARTMENT_MAP = {
+    "pothole": "Roads & Infrastructure",
+    "road_damage": "Roads & Infrastructure",
+    "garbage": "Waste Management",
+    "street_light": "Street Lighting",
+    "water_leak": "Water Services",
+    "sewage": "Water Services",
+    "traffic_signal": "Public Works",
+    "other": "Public Works"
+}
+
+# Base hazard scores for heuristic severity baseline (Research Paper Section VI-B)
+BASE_HAZARD_SCORES = {
+    "traffic_signal": 7.0,
+    "sewage": 6.5,
+    "pothole": 5.0,
+    "road_damage": 5.0,
+    "water_leak": 4.5,
+    "street_light": 4.0,
+    "garbage": 3.5,
+    "other": 3.0
+}
+
+_civic_model = None
+_civic_model_attempted = False
+_civic_model_error = None
+
+
+def get_civic_classifier():
+    """
+    Attempts to load a genuinely trained civic defect classification model if configured.
+    Strict truthfulness: If CIVIC_MODEL_PATH is unset or invalid, returns None.
+    An untrained ImageNet backbone with random head is NOT loaded or claimed as trained.
+    """
+    global _civic_model, _civic_model_attempted, _civic_model_error
+    if _civic_model_attempted:
+        return _civic_model
+
+    _civic_model_attempted = True
+    if not CIVIC_MODEL_PATH or not os.path.exists(CIVIC_MODEL_PATH):
+        _civic_model_error = "No trained civic classification checkpoint configured or found"
+        return None
+
+    try:
+        import torch
+        logger.info(f"Loading trained civic classification checkpoint from {CIVIC_MODEL_PATH}...")
+        loaded = torch.load(CIVIC_MODEL_PATH, map_location=DEVICE)
+        _civic_model = loaded
+        _civic_model_error = None
+        logger.info("Civic classification model loaded successfully.")
+    except Exception as e:
+        _civic_model_error = str(e)
+        logger.warning(f"Failed to load civic checkpoint ({e}). Model unavailable.")
+        _civic_model = None
+
+    return _civic_model
+
+
+def compute_heuristic_severity(image: Image.Image, candidate_category: Optional[str] = None) -> Tuple[Optional[float], Optional[str]]:
+    """
+    Rule-based heuristic severity baseline (Phase 4.1B).
+    
+    Formula:
+      S_raw = B_cat + 3.0 * norm_edge
+      S = round(clamp(S_raw, 1.0, 10.0), 1)
+      
+    Features:
+    1. B_cat: Category base hazard rating in [3.0, 7.0]. Defaults to 3.0 for unknown/other.
+    2. norm_edge: Average adjacent pixel intensity difference on 128x128 grayscale,
+       normalized to [0.0, 1.0] (saturation at delta >= 40.0).
+       
+    Strict bounds: Always within [1.0, 10.0].
+    Returns (None, None) if image features cannot be calculated.
+    Note: Heuristic baseline for operational prioritization; not clinically or physically validated.
+    """
+    if image is None:
+        return None, None
+
+    try:
+        # 1. Base hazard
+        norm_cat = (candidate_category or "").strip().lower().replace("-", "_").replace(" ", "_")
+        b_cat = BASE_HAZARD_SCORES.get(norm_cat, BASE_HAZARD_SCORES["other"])
+
+        # 2. Edge / contrast energy feature
+        gray = image.convert("L").resize((128, 128))
+        if hasattr(gray, "get_flattened_data"):
+            raw_pixels = list(gray.get_flattened_data())
+        else:
+            raw_pixels = list(gray.getdata())
+
+        if not raw_pixels or len(raw_pixels) != 128 * 128:
+            return None, None
+
+        diff_sum = 0
+        count = 0
+        for y in range(128):
+            row_offset = y * 128
+            for x in range(127):
+                diff_sum += abs(raw_pixels[row_offset + x + 1] - raw_pixels[row_offset + x])
+                count += 1
+
+        avg_diff = diff_sum / count if count > 0 else 0.0
+        norm_edge = min(1.0, avg_diff / 40.0)
+
+        s_raw = b_cat + (3.0 * norm_edge)
+        s_clamped = round(max(1.0, min(10.0, s_raw)), 1)
+        return s_clamped, "rule_based_heuristic"
+    except Exception as e:
+        logger.warning(f"Error computing heuristic severity: {e}")
+        return None, None
+
+
 
 def get_clip_components():
     """Lazily load the HuggingFace CLIP model and processor on CPU if online mode is enabled."""
@@ -513,7 +638,9 @@ def health_check():
         "initialization_error": err,
         "cache_entries": len(EMBEDDING_CACHE),
         "allowed_hosts": ALLOWED_HOSTS,
-        "max_image_bytes": MAX_IMAGE_BYTES
+        "max_image_bytes": MAX_IMAGE_BYTES,
+        "civic_classifier_ready": (_civic_model is not None),
+        "civic_checkpoint": CIVIC_MODEL_PATH or None
     }
 
 
@@ -683,6 +810,82 @@ def compare_similarity(payload: CompareRequest):
         top_match=top,
         ranked_candidates=ranked,
         unverified_count=unverified_count
+    )
+
+
+class ClassifyIssueRequest(BaseModel):
+    image_url: str = Field(..., description="Public HTTP/HTTPS URL of the issue image")
+    candidate_category: Optional[str] = Field(None, description="Optional citizen-reported defect category")
+
+
+class ClassifyIssueResponse(BaseModel):
+    category: Optional[str] = Field(None, description="Classified defect category")
+    confidence: Optional[float] = Field(None, description="Classification confidence [0.0, 1.0]")
+    severity: Optional[float] = Field(None, description="Estimated severity score [1.0, 10.0]")
+    suggested_department: Optional[str] = Field(None, description="Department suggested by classification")
+    model: str = Field(..., description="Truthful model identifier")
+    mode: str = Field(..., description="Operational mode: trained_checkpoint or checkpoint_unavailable")
+    is_trained_model: bool = Field(False, description="Whether a genuine trained checkpoint was used")
+    severity_mode: Optional[str] = Field(None, description="Severity estimator mode: rule_based_heuristic or null")
+    status: str = Field(..., description="Inference status: classified, unverified, or unavailable")
+
+
+@app.post("/classify-issue", response_model=ClassifyIssueResponse, dependencies=[Depends(verify_api_key)])
+def classify_issue_url(payload: ClassifyIssueRequest):
+    """
+    Classifies a civic issue image and provides a rule-based severity baseline.
+    Truthfulness:
+    - If no genuine trained checkpoint is configured, reports mode='checkpoint_unavailable',
+      category=None, confidence=None, and is_trained_model=False.
+    - Does NOT fabricate neural probabilities from heuristics.
+    - Severity is explicitly labeled as rule_based_heuristic within [1.0, 10.0].
+    """
+    url = payload.image_url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="image_url must not be empty.")
+
+    image = load_image_from_url(url)
+    severity_val, severity_mode = compute_heuristic_severity(image, payload.candidate_category)
+
+    model = get_civic_classifier()
+    if model is not None:
+        # If a genuine trained checkpoint was loaded in the future
+        pass
+
+    # Truthful unavailable response when no checkpoint is present
+    return ClassifyIssueResponse(
+        category=None,
+        confidence=None,
+        severity=severity_val,
+        suggested_department=None,
+        model="checkpoint_unavailable",
+        mode="checkpoint_unavailable",
+        is_trained_model=False,
+        severity_mode=severity_mode,
+        status="unavailable"
+    )
+
+
+@app.post("/classify-upload", response_model=ClassifyIssueResponse, dependencies=[Depends(verify_api_key)])
+async def classify_issue_upload(
+    file: UploadFile = File(...),
+    candidate_category: Optional[str] = None
+):
+    """Classifies an uploaded image file and returns severity estimate with truthful metadata."""
+    content = await file.read()
+    image = load_image_from_bytes(content)
+    severity_val, severity_mode = compute_heuristic_severity(image, candidate_category)
+
+    return ClassifyIssueResponse(
+        category=None,
+        confidence=None,
+        severity=severity_val,
+        suggested_department=None,
+        model="checkpoint_unavailable",
+        mode="checkpoint_unavailable",
+        is_trained_model=False,
+        severity_mode=severity_mode,
+        status="unavailable"
     )
 
 

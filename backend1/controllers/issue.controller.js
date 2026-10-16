@@ -3,11 +3,12 @@ const {
   findNearbyIssues,
   retrieveSpatialDuplicateCandidates
 } = require("../services/spatial.service");
-const { assessIssueDuplicates } = require("../services/ai.service");
+const { assessIssueDuplicates, classifyIssueImage } = require("../services/ai.service");
+const { resolveIssueRouting, getDepartmentForCategory } = require("../services/routing.service");
 
 exports.getAllIssues = async (req, res) => {
   try {
-    const issues = await Issue.find().select("-internalNotes").sort({ createdAt: -1 });
+    const issues = await Issue.find().select("-internalNotes -aiDiagnostic").sort({ createdAt: -1 });
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch issues" });
@@ -16,7 +17,7 @@ exports.getAllIssues = async (req, res) => {
 
 exports.getUserIssues = async (req, res) => {
   try {
-    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes");
+    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes -aiDiagnostic").sort({ createdAt: -1 });
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch user issues" });
@@ -95,11 +96,57 @@ exports.reportIssue = async (req, res) => {
       };
     }
 
+    // AI Classification & Severity Estimation (Phase 4.1B)
+    let classificationResult = null;
+    if (imageUrl) {
+      try {
+        const classRes = await classifyIssueImage(imageUrl, {
+          candidateCategory: type,
+          timeoutMs: 2500
+        });
+        if (classRes && classRes.success) {
+          classificationResult = classRes;
+        } else {
+          classificationResult = {
+            status: "unavailable",
+            error: classRes ? classRes.error : "Classification returned empty"
+          };
+        }
+      } catch (classErr) {
+        classificationResult = {
+          status: "exception",
+          error: classErr.message
+        };
+      }
+    }
+
+    // Deterministic Municipal Routing
+    const routingDecision = resolveIssueRouting({
+      citizenCategory: type,
+      aiResult: classificationResult
+    });
+
+    const assignedDepartment = routingDecision.department;
+
+    // Preserve all review flags: Combine duplicate review requirement with classification review requirement
+    const finalNeedsReview = Boolean(duplicateAssessment.needsReview || routingDecision.classificationNeedsReview);
+
+    const combinedAiDiagnostic = {
+      serviceStatus: duplicateAssessment.aiDiagnostic?.serviceStatus || "ok",
+      message: duplicateAssessment.aiDiagnostic?.message,
+      model: duplicateAssessment.embeddingModel,
+      classificationStatus: classificationResult?.status || "unavailable",
+      classificationModel: classificationResult?.model || "none"
+    };
+
     const newIssue = new Issue({
       userId: req.user.userId,
       type,
       description,
       imageUrl,
+      department: assignedDepartment,
+      severity: classificationResult?.severity || null,
+      classificationConfidence: classificationResult?.confidence || null,
       location: {
         type: "Point",
         coordinates: [lng, lat]
@@ -109,17 +156,21 @@ exports.reportIssue = async (req, res) => {
       duplicateStatus: duplicateAssessment.duplicateStatus,
       duplicateOf: duplicateAssessment.duplicateOf,
       similarityScore: duplicateAssessment.similarityScore,
-      needsReview: duplicateAssessment.needsReview,
-      aiDiagnostic: duplicateAssessment.aiDiagnostic
+      needsDuplicateReview: Boolean(duplicateAssessment.needsReview),
+      needsClassificationReview: Boolean(routingDecision.classificationNeedsReview),
+      needsReview: finalNeedsReview,
+      aiDiagnostic: combinedAiDiagnostic
     });
 
     await newIssue.save();
 
-    // Prepare response without leaking internalNotes, embedding, or embeddingModel
+    // Prepare response without leaking internalNotes, embedding, embeddingModel, aiDiagnostic, or classificationConfidence
     const responseIssue = newIssue.toJSON();
     delete responseIssue.internalNotes;
     delete responseIssue.embedding;
     delete responseIssue.embeddingModel;
+    delete responseIssue.aiDiagnostic;
+    delete responseIssue.classificationConfidence;
 
     res.status(201).json({
       message: "Issue reported successfully",
@@ -208,6 +259,7 @@ exports.getDuplicateCandidates = async (req, res) => {
       delete copy.embedding;
       delete copy.embeddingModel;
       delete copy.internalNotes;
+      delete copy.aiDiagnostic;
       return copy;
     });
 

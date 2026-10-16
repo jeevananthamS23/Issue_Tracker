@@ -348,3 +348,94 @@ grid-template-columns: 1fr;
 padding: 1.5rem;
 }
 }
+
+/* Phase 4.2A - Location & EXIF GPS Status Styles */
+.location-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.4;
+  animation: fadeIn 0.25s ease-in;
+}
+
+.location-banner.analyzing {
+  background-color: #ebf5fb;
+  border: 1px solid #aed6f1;
+  color: #1b4f72;
+}
+
+.location-banner.exif {
+  background-color: #eafaf1;
+  border: 1px solid #a9dfbf;
+  color: #145a32;
+}
+
+.location-banner.manual {
+  background-color: #f4f6f7;
+  border: 1px solid #d5dbdb;
+  color: #2c3e50;
+}
+
+.location-banner.no_exif {
+  background-color: #fef9e7;
+  border: 1px solid #f9e79f;
+  color: #7d6608;
+}
+
+.location-banner.empty {
+  background-color: #fdf2e9;
+  border: 1px solid #f5cba7;
+  color: #78281f;
+}
+
+.feedback-text {
+  flex: 1;
+}
+
+.source-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.source-tag.exif-tag {
+  background-color: #27ae60;
+  color: #ffffff;
+}
+
+.source-tag.manual-tag {
+  background-color: #34495e;
+  color: #ffffff;
+}
+
+.exif-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.exif-badge.success {
+  background-color: #d4efdf;
+  color: #1e8449;
+  border: 1px solid #a9dfbf;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

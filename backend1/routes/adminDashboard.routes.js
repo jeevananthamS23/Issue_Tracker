@@ -4,16 +4,18 @@ const {
   getAllIssues,
   getFilteredIssues,
   updateIssueStatus,
+  resolveDuplicateReview,
+  resolveClassificationReview,
   deleteIssue
 } = require("../controllers/adminDashboard.controller");
 const verifyAdmin = require("../middleware/authenticateTokenAdmin");
 
-
 router.get("/issues", verifyAdmin, getAllIssues);
-router.get("/issues/filter", verifyAdmin, getFilteredIssues); // e.g., /issues/filter?status=resolved&type=pothole
-// adminDashboard.router.js
+router.get("/issues/filter", verifyAdmin, getFilteredIssues);
 
 router.patch("/issues/:id", verifyAdmin, updateIssueStatus);
+router.patch("/issues/:id/review", verifyAdmin, resolveDuplicateReview);
+router.patch("/issues/:id/classification-review", verifyAdmin, resolveClassificationReview);
 
 router.delete("/issues/:id", verifyAdmin, deleteIssue);
 
