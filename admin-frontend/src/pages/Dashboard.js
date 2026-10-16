@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAdminAuth } from "../context/AdminAuthContext";
-import API, { getImageUrl } from "../api/api";
+import API, { getImageUrl, fetchUnreadNotificationCount } from "../api/api";
 import {
   ShieldCheck,
   LogOut,
@@ -22,8 +22,12 @@ import {
   Building2,
   FileText,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Flame,
+  Bell
 } from "lucide-react";
+import HotspotsSection from "../components/HotspotsSection";
+import NotificationCenter from "../components/NotificationCenter";
 import "./Dashboard.css";
 
 const DEPARTMENTS = [
@@ -166,6 +170,35 @@ const Dashboard = () => {
   const [issueToDelete, setIssueToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Notification unread count and hotspot target state
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [targetHotspotId, setTargetHotspotId] = useState(null);
+
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await fetchUnreadNotificationCount();
+      if (typeof res.data?.unreadCount === "number") {
+        setUnreadNotificationsCount(res.data.unreadCount);
+      }
+    } catch (err) {
+      console.error("Error fetching unread notification count:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    // Periodically poll unread count every 30 seconds while dashboard is open
+    const interval = setInterval(() => {
+      fetchUnreadCount();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
+
+  const handleNavigateToHotspot = (hotspotId) => {
+    setTargetHotspotId(hotspotId);
+    setActiveTab("hotspots");
+  };
+
   // Fetch all issues via protected admin endpoint
   const fetchIssues = useCallback(async () => {
     try {
@@ -191,7 +224,9 @@ const Dashboard = () => {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchIssues();
+    fetchUnreadCount();
   };
+
 
   // Open detail modal and sync form fields
   const handleOpenDetail = (issue) => {
@@ -391,6 +426,22 @@ const Dashboard = () => {
         </div>
 
         <div className="navbar-right">
+          <button
+            type="button"
+            onClick={() => setActiveTab("notifications")}
+            className={`btn-notification-bell ${activeTab === "notifications" ? "active" : ""}`}
+            title="Admin Notifications"
+            aria-label="Admin Notifications"
+            data-testid="btn-notification-bell"
+          >
+            <Bell size={18} />
+            {unreadNotificationsCount > 0 && (
+              <span className="bell-badge" data-testid="bell-unread-badge">
+                {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+              </span>
+            )}
+          </button>
+
           <div className="admin-profile-pill">
             <User size={16} className="pill-icon" />
             <div className="pill-text">
@@ -418,87 +469,89 @@ const Dashboard = () => {
       {/* Main Content Area */}
       <main className="admin-main">
         {/* Metric Cards */}
-        <section className="metrics-grid">
-          <div
-            className={`metric-card total ${activeTab === "all" ? "active-card" : ""}`}
-            onClick={() => setActiveTab("all")}
-            role="button"
-            tabIndex={0}
-            title="Filter all issues"
-          >
-            <div className="metric-header">
-              <span className="metric-label">Total Issues</span>
-              <FileText size={20} className="metric-icon" />
+        {activeTab !== "hotspots" && activeTab !== "notifications" && (
+          <section className="metrics-grid">
+            <div
+              className={`metric-card total ${activeTab === "all" ? "active-card" : ""}`}
+              onClick={() => setActiveTab("all")}
+              role="button"
+              tabIndex={0}
+              title="Filter all issues"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Total Issues</span>
+                <FileText size={20} className="metric-icon" />
+              </div>
+              <div className="metric-value">{totalCount}</div>
+              <span className="metric-hint">All reported civic issues</span>
             </div>
-            <div className="metric-value">{totalCount}</div>
-            <span className="metric-hint">All reported civic issues</span>
-          </div>
 
-          <div
-            className={`metric-card needs-review ${activeTab === "needs_review" ? "active-card" : ""}`}
-            onClick={() => {
-              setActiveTab("needs_review");
-              setReviewFilter("needs_review");
-            }}
-            role="button"
-            tabIndex={0}
-            title="Filter issues requiring duplicate moderation"
-          >
-            <div className="metric-header">
-              <span className="metric-label">Needs Review</span>
-              <Layers size={20} className="metric-icon alert-icon-color" />
+            <div
+              className={`metric-card needs-review ${activeTab === "needs_review" ? "active-card" : ""}`}
+              onClick={() => {
+                setActiveTab("needs_review");
+                setReviewFilter("needs_review");
+              }}
+              role="button"
+              tabIndex={0}
+              title="Filter issues requiring duplicate moderation"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Needs Review</span>
+                <Layers size={20} className="metric-icon alert-icon-color" />
+              </div>
+              <div className="metric-value">{needsReviewCount}</div>
+              <span className="metric-hint">
+                {flaggedDupCount} flagged duplicate{flaggedDupCount === 1 ? "" : "s"}
+              </span>
             </div>
-            <div className="metric-value">{needsReviewCount}</div>
-            <span className="metric-hint">
-              {flaggedDupCount} flagged duplicate{flaggedDupCount === 1 ? "" : "s"}
-            </span>
-          </div>
 
-          <div
-            className={`metric-card reported ${activeTab === "reported" ? "active-card" : ""}`}
-            onClick={() => setActiveTab("reported")}
-            role="button"
-            tabIndex={0}
-            title="Filter reported issues"
-          >
-            <div className="metric-header">
-              <span className="metric-label">Reported</span>
-              <AlertTriangle size={20} className="metric-icon" />
+            <div
+              className={`metric-card reported ${activeTab === "reported" ? "active-card" : ""}`}
+              onClick={() => setActiveTab("reported")}
+              role="button"
+              tabIndex={0}
+              title="Filter reported issues"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Reported</span>
+                <AlertTriangle size={20} className="metric-icon" />
+              </div>
+              <div className="metric-value">{reportedCount}</div>
+              <span className="metric-hint">Awaiting review & triage</span>
             </div>
-            <div className="metric-value">{reportedCount}</div>
-            <span className="metric-hint">Awaiting review & triage</span>
-          </div>
 
-          <div
-            className={`metric-card in-progress ${activeTab === "in-progress" ? "active-card" : ""}`}
-            onClick={() => setActiveTab("in-progress")}
-            role="button"
-            tabIndex={0}
-            title="Filter in-progress issues"
-          >
-            <div className="metric-header">
-              <span className="metric-label">In Progress</span>
-              <Clock size={20} className="metric-icon" />
+            <div
+              className={`metric-card in-progress ${activeTab === "in-progress" ? "active-card" : ""}`}
+              onClick={() => setActiveTab("in-progress")}
+              role="button"
+              tabIndex={0}
+              title="Filter in-progress issues"
+            >
+              <div className="metric-header">
+                <span className="metric-label">In Progress</span>
+                <Clock size={20} className="metric-icon" />
+              </div>
+              <div className="metric-value">{inProgressCount}</div>
+              <span className="metric-hint">Active municipal remediation</span>
             </div>
-            <div className="metric-value">{inProgressCount}</div>
-            <span className="metric-hint">Active municipal remediation</span>
-          </div>
 
-          <div
-            className={`metric-card resolved ${activeTab === "resolved" ? "active-card" : ""}`}
-            onClick={() => setActiveTab("resolved")}
-            role="button"
-            tabIndex={0}
-            title="Filter resolved issues"
-          >
-            <div className="metric-header">
-              <span className="metric-label">Resolved</span>
-              <CheckCircle2 size={20} className="metric-icon" />
+            <div
+              className={`metric-card resolved ${activeTab === "resolved" ? "active-card" : ""}`}
+              onClick={() => setActiveTab("resolved")}
+              role="button"
+              tabIndex={0}
+              title="Filter resolved issues"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Resolved</span>
+                <CheckCircle2 size={20} className="metric-icon" />
+              </div>
+              <div className="metric-value">{resolvedCount}</div>
+              <span className="metric-hint">Successfully completed</span>
             </div>
-            <div className="metric-value">{resolvedCount}</div>
-            <span className="metric-hint">Successfully completed</span>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Navigation Tabs Bar */}
         <nav className="dashboard-tabs-bar" aria-label="Issue Filter Views">
@@ -537,359 +590,393 @@ const Dashboard = () => {
           >
             Resolved <span className="tab-badge">{resolvedCount}</span>
           </button>
+          <button
+            className={`tab-btn tab-hotspots ${activeTab === "hotspots" ? "active" : ""}`}
+            data-testid="tab-hotspots"
+            onClick={() => setActiveTab("hotspots")}
+          >
+            <Flame size={15} /> Hotspots (DBSCAN)
+          </button>
+          <button
+            className={`tab-btn tab-notifications ${activeTab === "notifications" ? "active" : ""}`}
+            data-testid="tab-notifications"
+            onClick={() => setActiveTab("notifications")}
+          >
+            <Bell size={15} /> Notifications{" "}
+            {unreadNotificationsCount > 0 && (
+              <span className="tab-badge badge-unread-count" data-testid="tab-unread-badge">
+                {unreadNotificationsCount}
+              </span>
+            )}
+          </button>
         </nav>
 
-        {/* Filter and Search Controls */}
-        <section className="toolbar-section">
-          <div className="search-bar">
-            <Search size={18} className="search-icon" />
-            <input
-              type="text"
-              placeholder="Search by ID, keyword, parent ID, or citizen reporter..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search issues"
-            />
-            {searchQuery && (
-              <button
-                className="clear-search-btn"
-                onClick={() => setSearchQuery("")}
-                aria-label="Clear search"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
+        {activeTab === "hotspots" ? (
+          <HotspotsSection
+            initialSelectedHotspotId={targetHotspotId}
+            onClearInitialHotspotId={() => setTargetHotspotId(null)}
+          />
+        ) : activeTab === "notifications" ? (
+          <NotificationCenter
+            onNavigateToHotspot={handleNavigateToHotspot}
+            onUnreadCountChange={setUnreadNotificationsCount}
+          />
+        ) : (
 
-          <div className="filters-row">
-            <div className="filter-item">
-              <Filter size={16} className="filter-icon" />
-              <label htmlFor="status-filter">Status:</label>
-              <select
-                id="status-filter"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="all">All Statuses</option>
-                <option value="reported">Reported</option>
-                <option value="in-progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-              </select>
-            </div>
+          <>
+            {/* Filter and Search Controls */}
+            <section className="toolbar-section">
+              <div className="search-bar">
+                <Search size={18} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search by ID, keyword, parent ID, or citizen reporter..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="Search issues"
+                />
+                {searchQuery && (
+                  <button
+                    className="clear-search-btn"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear search"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
 
-            <div className="filter-item">
-              <label htmlFor="type-filter">Category:</label>
-              <select
-                id="type-filter"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              >
-                {ISSUE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="filters-row">
+                <div className="filter-item">
+                  <Filter size={16} className="filter-icon" />
+                  <label htmlFor="status-filter">Status:</label>
+                  <select
+                    id="status-filter"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="reported">Reported</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
 
-            <div className="filter-item">
-              <label htmlFor="dept-filter">Department:</label>
-              <select
-                id="dept-filter"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-              >
-                <option value="all">All Departments</option>
-                {DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div className="filter-item">
+                  <label htmlFor="type-filter">Category:</label>
+                  <select
+                    id="type-filter"
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                  >
+                    {ISSUE_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t.charAt(0).toUpperCase() + t.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="filter-item">
-              <label htmlFor="review-filter">Duplicate Review:</label>
-              <select
-                id="review-filter"
-                value={reviewFilter}
-                onChange={(e) => setReviewFilter(e.target.value)}
-              >
-                {REVIEW_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div className="filter-item">
+                  <label htmlFor="dept-filter">Department:</label>
+                  <select
+                    id="dept-filter"
+                    value={departmentFilter}
+                    onChange={(e) => setDepartmentFilter(e.target.value)}
+                  >
+                    <option value="all">All Departments</option>
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            {(statusFilter !== "all" ||
-              typeFilter !== "all" ||
-              departmentFilter !== "all" ||
-              reviewFilter !== "all" ||
-              activeTab !== "all" ||
-              searchQuery) && (
-              <button
-                className="btn-reset-filters"
-                onClick={() => {
-                  setStatusFilter("all");
-                  setTypeFilter("all");
-                  setDepartmentFilter("all");
-                  setReviewFilter("all");
-                  setActiveTab("all");
-                  setSearchQuery("");
-                }}
-              >
-                Reset All Filters
-              </button>
-            )}
-          </div>
-        </section>
+                <div className="filter-item">
+                  <label htmlFor="review-filter">Duplicate Review:</label>
+                  <select
+                    id="review-filter"
+                    value={reviewFilter}
+                    onChange={(e) => setReviewFilter(e.target.value)}
+                  >
+                    {REVIEW_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        {/* Issues Table Section */}
-        <section className="issues-view-container">
-          {loading ? (
-            <div className="loading-state" data-testid="dashboard-loading">
-              <div className="spinner"></div>
-              <p>Loading community issues from secure admin endpoint...</p>
-            </div>
-          ) : error ? (
-            <div className="error-state" data-testid="dashboard-error">
-              <AlertTriangle size={36} className="error-icon" />
-              <h3>Failed to Retrieve Issues</h3>
-              <p>{error}</p>
-              <button onClick={fetchIssues} className="btn-retry">
-                <RefreshCw size={16} /> Try Again
-              </button>
-            </div>
-          ) : filteredIssues.length === 0 ? (
-            <div className="empty-state" data-testid="dashboard-empty">
-              <CheckCircle2 size={36} className="empty-icon" />
-              <h3>No Issues Found</h3>
-              <p>
-                {issues.length === 0
-                  ? "There are currently no community issues reported in the system."
-                  : activeTab === "needs_review"
-                  ? "Great job! There are no duplicate issues currently pending manual review."
-                  : "No issues match the selected search or filter criteria."}
-              </p>
-              {issues.length > 0 && (
-                <button
-                  className="btn-retry"
-                  onClick={() => {
-                    setStatusFilter("all");
-                    setTypeFilter("all");
-                    setDepartmentFilter("all");
-                    setReviewFilter("all");
-                    setActiveTab("all");
-                    setSearchQuery("");
-                  }}
-                >
-                  Clear Filters
-                </button>
+                {(statusFilter !== "all" ||
+                  typeFilter !== "all" ||
+                  departmentFilter !== "all" ||
+                  reviewFilter !== "all" ||
+                  activeTab !== "all" ||
+                  searchQuery) && (
+                  <button
+                    className="btn-reset-filters"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setTypeFilter("all");
+                      setDepartmentFilter("all");
+                      setReviewFilter("all");
+                      setActiveTab("all");
+                      setSearchQuery("");
+                    }}
+                  >
+                    Reset All Filters
+                  </button>
+                )}
+              </div>
+            </section>
+
+            {/* Issues Table Section */}
+            <section className="issues-view-container">
+              {loading ? (
+                <div className="loading-state" data-testid="dashboard-loading">
+                  <div className="spinner"></div>
+                  <p>Loading community issues from secure admin endpoint...</p>
+                </div>
+              ) : error ? (
+                <div className="error-state" data-testid="dashboard-error">
+                  <AlertTriangle size={36} className="error-icon" />
+                  <h3>Failed to Retrieve Issues</h3>
+                  <p>{error}</p>
+                  <button onClick={fetchIssues} className="btn-retry">
+                    <RefreshCw size={16} /> Try Again
+                  </button>
+                </div>
+              ) : filteredIssues.length === 0 ? (
+                <div className="empty-state" data-testid="dashboard-empty">
+                  <CheckCircle2 size={36} className="empty-icon" />
+                  <h3>No Issues Found</h3>
+                  <p>
+                    {issues.length === 0
+                      ? "There are currently no community issues reported in the system."
+                      : activeTab === "needs_review"
+                      ? "Great job! There are no duplicate issues currently pending manual review."
+                      : "No issues match the selected search or filter criteria."}
+                  </p>
+                  {issues.length > 0 && (
+                    <button
+                      className="btn-retry"
+                      onClick={() => {
+                        setStatusFilter("all");
+                        setTypeFilter("all");
+                        setDepartmentFilter("all");
+                        setReviewFilter("all");
+                        setActiveTab("all");
+                        setSearchQuery("");
+                      }}
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="table-wrapper">
+                  <table className="issues-table">
+                    <thead>
+                      <tr>
+                        <th>Type & ID</th>
+                        <th>Description</th>
+                        <th>Citizen Reporter</th>
+                        <th>Department</th>
+                        <th>Severity</th>
+                        <th>Status & Review</th>
+                        <th>Votes</th>
+                        <th>Reported Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredIssues.map((issue) => (
+                        <tr key={issue._id} className="issue-row">
+                          <td className="type-cell">
+                            <div className="type-badge-group">
+                              <span className="type-badge">{issue.type}</span>
+                              <span className="issue-id">#{issue._id.slice(-6)}</span>
+                            </div>
+
+                            {/* Review State Badges */}
+                            <div className="review-badges-stack">
+                              {issue.needsDuplicateReview && (
+                                <span className="badge-flagged-dup" title="Pending duplicate review">
+                                  <Layers size={12} /> Dup Review
+                                </span>
+                              )}
+
+                              {issue.needsClassificationReview && (
+                                <span className="badge-triage-review" title="Pending category triage review">
+                                  <AlertTriangle size={12} /> Triage Review
+                                </span>
+                              )}
+
+                              {issue.needsReview && !issue.needsDuplicateReview && !issue.needsClassificationReview && (
+                                <span className="badge-needs-review" title="Pending manual review">
+                                  <AlertTriangle size={12} /> Needs Review
+                                </span>
+                              )}
+
+                              {issue.duplicateStatus === "flagged_duplicate" && !issue.needsDuplicateReview && (
+                                <span
+                                  className="badge-flagged-dup"
+                                  title={`AI flagged potential duplicate (${Math.round((issue.similarityScore || 0) * 100)}% match)`}
+                                >
+                                  <Layers size={12} /> AI Dup{" "}
+                                  {issue.similarityScore ? `(${Math.round(issue.similarityScore * 100)}%)` : ""}
+                                </span>
+                              )}
+
+                              {issue.duplicateStatus === "unverified" && !issue.needsDuplicateReview && (
+                                <span className="badge-unverified-ai" title="AI check unverified">
+                                  <HelpCircle size={12} /> Unverified AI
+                                </span>
+                              )}
+
+                              {issue.reviewResolution === "confirmed_duplicate" && (
+                                <span className="badge-confirmed-dup" title="Admin confirmed duplicate">
+                                  <CheckCircle2 size={12} /> Confirmed Dup
+                                </span>
+                              )}
+
+                              {issue.reviewResolution === "dismissed_unique" && (
+                                <span className="badge-dismissed-unique" title="Admin marked distinct/unique">
+                                  <ShieldCheck size={12} /> Distinct
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="desc-cell">
+                            <p className="desc-text" title={issue.description}>
+                              {issue.description}
+                            </p>
+                            {issue.imageUrl && (
+                              <span className="has-photo-tag">Photo attached</span>
+                            )}
+                            {issue.duplicateOf && (
+                              <div className="dup-ref-tag">
+                                <span className="dup-ref-label">Linked to:</span>
+                                <span className="dup-ref-id">
+                                  #{typeof issue.duplicateOf === "object" ? issue.duplicateOf._id.slice(-6) : issue.duplicateOf.slice(-6)}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="reporter-cell">
+                            {issue.userId ? (
+                              <div className="reporter-info">
+                                <span className="reporter-name">
+                                  {issue.userId.fullName || "Citizen"}
+                                </span>
+                                <span className="reporter-email">{issue.userId.email}</span>
+                              </div>
+                            ) : (
+                              <span className="anonymous-tag">Anonymous / Deleted</span>
+                            )}
+                          </td>
+
+                          <td className="dept-cell">
+                            {issue.department ? (
+                              <span className="dept-text">{issue.department}</span>
+                            ) : (
+                              <span className="unassigned-text">Unassigned</span>
+                            )}
+                          </td>
+
+                          <td className="severity-cell" data-label="Severity">
+                            {issue.severity !== null && issue.severity !== undefined ? (
+                              <div
+                                className="severity-metric-wrap"
+                                title={getSeverityBadgeInfo(issue.severity).tooltip}
+                              >
+                                <span className={`severity-pill ${getSeverityBadgeInfo(issue.severity).pillClass}`}>
+                                  <span className="severity-band-label">{getSeverityBadgeInfo(issue.severity).label}</span>
+                                  <span className="severity-score-val">{getSeverityBadgeInfo(issue.severity).scoreFormatted}</span>
+                                </span>
+                                <span className="severity-heuristic-label">Heuristic</span>
+                              </div>
+                            ) : (
+                              <div className="severity-metric-wrap" title="Severity estimate unavailable">
+                                <span className="severity-pill severity-pill-unavailable">
+                                  <span className="severity-score-val">—</span>
+                                </span>
+                                <span className="severity-heuristic-label text-muted">N/A</span>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="status-cell">
+                            <span className={`status-pill ${issue.status || "reported"}`}>
+                              {issue.status === "in-progress"
+                                ? "In Progress"
+                                : (issue.status || "reported").charAt(0).toUpperCase() +
+                                  (issue.status || "reported").slice(1)}
+                            </span>
+                          </td>
+
+                          <td className="votes-cell">
+                            <span className="votes-count">
+                              <ThumbsUp size={14} /> {issue.votes || 0}
+                            </span>
+                          </td>
+
+                          <td className="date-cell">
+                            {new Date(issue.createdAt).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric"
+                            })}
+                          </td>
+
+                          <td className="actions-cell">
+                            <div className="actions-buttons">
+                              {/* Dedicated Compare button if duplicate candidate or needs review */}
+                              {(issue.needsReview ||
+                                issue.duplicateStatus === "flagged_duplicate" ||
+                                issue.duplicateOf) && (
+                                <button
+                                  className="btn-action-compare"
+                                  onClick={() => handleOpenComparison(issue)}
+                                  title="Open side-by-side duplicate comparison"
+                                  aria-label={`Compare duplicate issue ${issue._id}`}
+                                >
+                                  <Layers size={14} />
+                                  <span>Compare</span>
+                                </button>
+                              )}
+
+                              <button
+                                className="btn-action-review"
+                                onClick={() => handleOpenDetail(issue)}
+                                title="Inspect and update triage status"
+                                aria-label={`Triage issue ${issue._id}`}
+                              >
+                                Triage
+                              </button>
+
+                              <button
+                                className="btn-action-delete"
+                                onClick={() => setIssueToDelete(issue)}
+                                title="Delete issue"
+                                aria-label={`Delete issue ${issue._id}`}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
-          ) : (
-            <div className="table-wrapper">
-              <table className="issues-table">
-                <thead>
-                  <tr>
-                    <th>Type & ID</th>
-                    <th>Description</th>
-                    <th>Citizen Reporter</th>
-                    <th>Department</th>
-                    <th>Severity</th>
-                    <th>Status & Review</th>
-                    <th>Votes</th>
-                    <th>Reported Date</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredIssues.map((issue) => (
-                    <tr key={issue._id} className="issue-row">
-                      <td className="type-cell">
-                        <div className="type-badge-group">
-                          <span className="type-badge">{issue.type}</span>
-                          <span className="issue-id">#{issue._id.slice(-6)}</span>
-                        </div>
-
-                        {/* Review State Badges */}
-                        <div className="review-badges-stack">
-                          {issue.needsDuplicateReview && (
-                            <span className="badge-flagged-dup" title="Pending duplicate review">
-                              <Layers size={12} /> Dup Review
-                            </span>
-                          )}
-
-                          {issue.needsClassificationReview && (
-                            <span className="badge-triage-review" title="Pending category triage review">
-                              <AlertTriangle size={12} /> Triage Review
-                            </span>
-                          )}
-
-                          {issue.needsReview && !issue.needsDuplicateReview && !issue.needsClassificationReview && (
-                            <span className="badge-needs-review" title="Pending manual review">
-                              <AlertTriangle size={12} /> Needs Review
-                            </span>
-                          )}
-
-                          {issue.duplicateStatus === "flagged_duplicate" && !issue.needsDuplicateReview && (
-                            <span
-                              className="badge-flagged-dup"
-                              title={`AI flagged potential duplicate (${Math.round((issue.similarityScore || 0) * 100)}% match)`}
-                            >
-                              <Layers size={12} /> AI Dup{" "}
-                              {issue.similarityScore ? `(${Math.round(issue.similarityScore * 100)}%)` : ""}
-                            </span>
-                          )}
-
-                          {issue.duplicateStatus === "unverified" && !issue.needsDuplicateReview && (
-                            <span className="badge-unverified-ai" title="AI check unverified">
-                              <HelpCircle size={12} /> Unverified AI
-                            </span>
-                          )}
-
-                          {issue.reviewResolution === "confirmed_duplicate" && (
-                            <span className="badge-confirmed-dup" title="Admin confirmed duplicate">
-                              <CheckCircle2 size={12} /> Confirmed Dup
-                            </span>
-                          )}
-
-                          {issue.reviewResolution === "dismissed_unique" && (
-                            <span className="badge-dismissed-unique" title="Admin marked distinct/unique">
-                              <ShieldCheck size={12} /> Distinct
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="desc-cell">
-                        <p className="desc-text" title={issue.description}>
-                          {issue.description}
-                        </p>
-                        {issue.imageUrl && (
-                          <span className="has-photo-tag">Photo attached</span>
-                        )}
-                        {issue.duplicateOf && (
-                          <div className="dup-ref-tag">
-                            <span className="dup-ref-label">Linked to:</span>
-                            <span className="dup-ref-id">
-                              #{typeof issue.duplicateOf === "object" ? issue.duplicateOf._id.slice(-6) : issue.duplicateOf.slice(-6)}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="reporter-cell">
-                        {issue.userId ? (
-                          <div className="reporter-info">
-                            <span className="reporter-name">
-                              {issue.userId.fullName || "Citizen"}
-                            </span>
-                            <span className="reporter-email">{issue.userId.email}</span>
-                          </div>
-                        ) : (
-                          <span className="anonymous-tag">Anonymous / Deleted</span>
-                        )}
-                      </td>
-
-                      <td className="dept-cell">
-                        {issue.department ? (
-                          <span className="dept-text">{issue.department}</span>
-                        ) : (
-                          <span className="unassigned-text">Unassigned</span>
-                        )}
-                      </td>
-
-                      <td className="severity-cell" data-label="Severity">
-                        {issue.severity !== null && issue.severity !== undefined ? (
-                          <div
-                            className="severity-metric-wrap"
-                            title={getSeverityBadgeInfo(issue.severity).tooltip}
-                          >
-                            <span className={`severity-pill ${getSeverityBadgeInfo(issue.severity).pillClass}`}>
-                              <span className="severity-band-label">{getSeverityBadgeInfo(issue.severity).label}</span>
-                              <span className="severity-score-val">{getSeverityBadgeInfo(issue.severity).scoreFormatted}</span>
-                            </span>
-                            <span className="severity-heuristic-label">Heuristic</span>
-                          </div>
-                        ) : (
-                          <div className="severity-metric-wrap" title="Severity estimate unavailable">
-                            <span className="severity-pill severity-pill-unavailable">
-                              <span className="severity-score-val">—</span>
-                            </span>
-                            <span className="severity-heuristic-label text-muted">N/A</span>
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="status-cell">
-                        <span className={`status-pill ${issue.status || "reported"}`}>
-                          {issue.status === "in-progress"
-                            ? "In Progress"
-                            : (issue.status || "reported").charAt(0).toUpperCase() +
-                              (issue.status || "reported").slice(1)}
-                        </span>
-                      </td>
-
-                      <td className="votes-cell">
-                        <span className="votes-count">
-                          <ThumbsUp size={14} /> {issue.votes || 0}
-                        </span>
-                      </td>
-
-                      <td className="date-cell">
-                        {new Date(issue.createdAt).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric"
-                        })}
-                      </td>
-
-                      <td className="actions-cell">
-                        <div className="actions-buttons">
-                          {/* Dedicated Compare button if duplicate candidate or needs review */}
-                          {(issue.needsReview ||
-                            issue.duplicateStatus === "flagged_duplicate" ||
-                            issue.duplicateOf) && (
-                            <button
-                              className="btn-action-compare"
-                              onClick={() => handleOpenComparison(issue)}
-                              title="Open side-by-side duplicate comparison"
-                              aria-label={`Compare duplicate issue ${issue._id}`}
-                            >
-                              <Layers size={14} />
-                              <span>Compare</span>
-                            </button>
-                          )}
-
-                          <button
-                            className="btn-action-review"
-                            onClick={() => handleOpenDetail(issue)}
-                            title="Inspect and update triage status"
-                            aria-label={`Triage issue ${issue._id}`}
-                          >
-                            Triage
-                          </button>
-
-                          <button
-                            className="btn-action-delete"
-                            onClick={() => setIssueToDelete(issue)}
-                            title="Delete issue"
-                            aria-label={`Delete issue ${issue._id}`}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+            </section>
+          </>
+        )}
       </main>
 
       {/* Side-by-Side Duplicate Comparison & Resolution Modal */}

@@ -6,7 +6,15 @@ const {
   updateIssueStatus,
   resolveDuplicateReview,
   resolveClassificationReview,
-  deleteIssue
+  deleteIssue,
+  getHotspots,
+  getHotspotById,
+  runHotspotRefresh,
+  getNotifications,
+  getUnreadNotificationCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  retryNotificationEmail
 } = require("../controllers/adminDashboard.controller");
 const verifyAdmin = require("../middleware/authenticateTokenAdmin");
 
@@ -18,5 +26,17 @@ router.patch("/issues/:id/review", verifyAdmin, resolveDuplicateReview);
 router.patch("/issues/:id/classification-review", verifyAdmin, resolveClassificationReview);
 
 router.delete("/issues/:id", verifyAdmin, deleteIssue);
+
+// Protected Hotspot Endpoints (Phase 4.2B-C)
+router.get("/hotspots", verifyAdmin, getHotspots);
+router.get("/hotspots/:id", verifyAdmin, getHotspotById);
+router.post("/hotspots/run", verifyAdmin, runHotspotRefresh);
+
+// Protected Admin Notification Endpoints (Phase 4.2C-A)
+router.get("/notifications", verifyAdmin, getNotifications);
+router.get("/notifications/unread-count", verifyAdmin, getUnreadNotificationCount);
+router.patch("/notifications/read-all", verifyAdmin, markAllNotificationsAsRead);
+router.patch("/notifications/:id/read", verifyAdmin, markNotificationAsRead);
+router.post("/notifications/:id/retry-email", verifyAdmin, retryNotificationEmail);
 
 module.exports = router;

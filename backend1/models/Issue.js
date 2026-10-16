@@ -225,6 +225,13 @@ const issueSchema = new mongoose.Schema(
     },
     reviewNotes: {
       type: String
+    },
+    // Hotspot cluster linkage (Phase 4.2B)
+    clusterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Hotspot",
+      default: null,
+      index: true
     }
   },
   {
@@ -234,6 +241,15 @@ const issueSchema = new mongoose.Schema(
     toObject: { virtuals: true }
   }
 );
+
+// Virtual getter and setter for backward-compatible cluster_id
+issueSchema.virtual("cluster_id")
+  .get(function () {
+    return this.clusterId;
+  })
+  .set(function (val) {
+    this.clusterId = val;
+  });
 
 // Pre-save hook: derive consolidated needsReview from outstanding review reasons
 issueSchema.pre("save", function (next) {

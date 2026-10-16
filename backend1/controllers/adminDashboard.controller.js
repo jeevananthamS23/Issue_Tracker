@@ -1,5 +1,10 @@
 const mongoose = require("mongoose");
 const Issue = require("../models/Issue");
+const Hotspot = require("../models/Hotspot");
+const AdminNotification = require("../models/AdminNotification");
+const { CANONICAL_CATEGORIES, normalizeCategory } = require("../services/routing.service");
+const { executeHotspotJob } = require("../services/hotspotJob.service");
+const { retryNotificationEmail } = require("../services/adminNotification.service");
 
 const SAFE_DUPLICATE_OF_FIELDS = "type description imageUrl status location createdAt";
 const SAFE_USER_FIELDS = "fullName email";
@@ -385,3 +390,413 @@ exports.deleteIssue = async (req, res) => {
     res.status(500).json({ message: "Error deleting issue", error: err.message });
   }
 };
+
+/**
+ * Phase 4.2B-C: List hotspots with validated pagination, filtering, and sorting.
+ * Endpoint: GET /api/admin-dashboard/hotspots
+ */
+exports.getHotspots = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      status,
+      department,
+      sortBy = "lastDetectedAt",
+      order = "desc"
+    } = req.query;
+
+    // Validate page
+    const parsedPage = parseInt(page, 10);
+    if (isNaN(parsedPage) || parsedPage < 1) {
+      return res.status(400).json({
+        error: true,
+        message: "Invalid page parameter. Must be an integer greater than or equal to 1."
+      });
+    }
+
+    // Validate limit
+    const parsedLimit = parseInt(limit, 10);
+    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      return res.status(400).json({
+        error: true,
+        message: "Invalid limit parameter. Must be an integer between 1 and 100."
+      });
+    }
+
+    // Build filter
+    const filter = {};
+
+    if (category) {
+      const cleaned = String(category).trim().toLowerCase().replace(/[\s-]+/g, "_");
+      const normalizedCat = normalizeCategory(category);
+      if (normalizedCat === "other" && cleaned !== "other" && !CANONICAL_CATEGORIES.includes(cleaned)) {
+        return res.status(400).json({
+          error: true,
+          message: `Invalid category filter '${category}'. Must be one of: ${CANONICAL_CATEGORIES.join(", ")}.`
+        });
+      }
+      filter.category = normalizedCat;
+    }
+
+    if (status) {
+      const validStatuses = ["active", "escalating", "resolving", "resolved", "dismissed"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: true,
+          message: `Invalid status filter '${status}'. Must be one of: ${validStatuses.join(", ")}.`
+        });
+      }
+      filter.status = status;
+    }
+
+    if (department && typeof department === "string" && department.trim()) {
+      filter.department = department.trim();
+    }
+
+    // Sort validation
+    const allowedSortFields = [
+      "lastDetectedAt",
+      "firstDetectedAt",
+      "distinctDefectCount",
+      "totalReportCount",
+      "totalVotes",
+      "meanSeverity",
+      "createdAt"
+    ];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : "lastDetectedAt";
+    const sortOrder = order === "asc" ? 1 : -1;
+
+    const total = await Hotspot.countDocuments(filter);
+    const totalPages = Math.ceil(total / parsedLimit) || 1;
+
+    const hotspots = await Hotspot.find(filter)
+      .sort({ [sortField]: sortOrder })
+      .skip((parsedPage - 1) * parsedLimit)
+      .limit(parsedLimit)
+      .lean();
+
+    return res.status(200).json({
+      error: false,
+      total,
+      page: parsedPage,
+      totalPages,
+      limit: parsedLimit,
+      hotspots
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Error fetching hotspots",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2B-C: Retrieve a hotspot by ID along with safe constituent issue summaries.
+ * Endpoint: GET /api/admin-dashboard/hotspots/:id
+ * Strictly deselects internalNotes, embeddings, and sensitive AI diagnostics.
+ */
+exports.getHotspotById = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: true, message: "Invalid hotspot ID format" });
+  }
+
+  try {
+    const hotspot = await Hotspot.findById(id).lean();
+    if (!hotspot) {
+      return res.status(404).json({ error: true, message: "Hotspot not found" });
+    }
+
+    // Safely project constituent issues (Deselect internalNotes, embedding, embeddingModel, aiDiagnostic)
+    const issues = await Issue.find({ _id: { $in: hotspot.issueIds } })
+      .select("type description location status votes severity imageUrl createdAt duplicateStatus duplicateOf needsReview needsDuplicateReview needsClassificationReview")
+      .populate("userId", SAFE_USER_FIELDS)
+      .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
+      .lean();
+
+    return res.status(200).json({
+      error: false,
+      hotspot: {
+        ...hotspot,
+        issues
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Error retrieving hotspot details",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2B-C: Manually trigger a hotspot refresh job with concurrency guard.
+ * Endpoint: POST /api/admin-dashboard/hotspots/run
+ */
+exports.runHotspotRefresh = async (req, res) => {
+  try {
+    const { category, epsMeters, minSamples, rollingWindowDays } = req.body || {};
+
+    const options = {};
+    if (category) {
+      const cleaned = String(category).trim().toLowerCase().replace(/[\s-]+/g, "_");
+      const normalizedCat = normalizeCategory(category);
+      if (normalizedCat === "other" && cleaned !== "other" && !CANONICAL_CATEGORIES.includes(cleaned)) {
+        return res.status(400).json({
+          error: true,
+          message: `Invalid category option '${category}'. Must be one of: ${CANONICAL_CATEGORIES.join(", ")}.`
+        });
+      }
+      options.category = normalizedCat;
+    }
+    if (epsMeters !== undefined) {
+      const eps = Number(epsMeters);
+      if (isNaN(eps) || eps <= 0) {
+        return res.status(400).json({ error: true, message: "epsMeters must be a positive number" });
+      }
+      options.epsMeters = eps;
+    }
+    if (minSamples !== undefined) {
+      const minS = parseInt(minSamples, 10);
+      if (isNaN(minS) || minS < 1) {
+        return res.status(400).json({ error: true, message: "minSamples must be an integer >= 1" });
+      }
+      options.minSamples = minS;
+    }
+    if (rollingWindowDays !== undefined) {
+      const rwd = Number(rollingWindowDays);
+      if (isNaN(rwd) || rwd <= 0) {
+        return res.status(400).json({ error: true, message: "rollingWindowDays must be a positive number" });
+      }
+      options.rollingWindowDays = rwd;
+    }
+
+    const result = await executeHotspotJob(options);
+
+    if (!result.success && result.conflict) {
+      return res.status(409).json({
+        error: true,
+        message: "Hotspot refresh job is already running. Please wait for the current run to complete.",
+        reason: result.reason
+      });
+    }
+
+    return res.status(200).json({
+      error: false,
+      message: "Hotspot refresh job completed successfully",
+      summary: result.summary,
+      durationMs: result.durationMs
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to execute hotspot refresh",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2C-A: Retrieve paginated administrative notifications with unread count and filters.
+ * Endpoint: GET /api/admin-dashboard/notifications
+ */
+exports.getNotifications = async (req, res) => {
+  try {
+    let page = parseInt(req.query.page, 10);
+    let limit = parseInt(req.query.limit, 10);
+
+    if (isNaN(page) || page < 1) {
+      if (req.query.page !== undefined) {
+        return res.status(400).json({ error: true, message: "Page must be an integer >= 1" });
+      }
+      page = 1;
+    }
+
+    if (isNaN(limit) || limit < 1 || limit > 100) {
+      if (req.query.limit !== undefined) {
+        return res.status(400).json({ error: true, message: "Limit must be an integer between 1 and 100" });
+      }
+      limit = 20;
+    }
+
+    const filter = {};
+
+    if (req.query.read !== undefined) {
+      const readStr = String(req.query.read).toLowerCase().trim();
+      if (readStr === "true") {
+        filter.readAt = { $ne: null };
+      } else if (readStr === "false") {
+        filter.readAt = null;
+      } else {
+        return res.status(400).json({ error: true, message: "Invalid read filter. Must be 'true' or 'false'." });
+      }
+    }
+
+    if (req.query.type) {
+      const typeStr = String(req.query.type).trim();
+      if (!["hotspot_detected", "hotspot_escalated"].includes(typeStr)) {
+        return res.status(400).json({
+          error: true,
+          message: `Invalid type filter '${typeStr}'. Must be 'hotspot_detected' or 'hotspot_escalated'.`
+        });
+      }
+      filter.type = typeStr;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [total, unreadCount, notifications] = await Promise.all([
+      AdminNotification.countDocuments(filter),
+      AdminNotification.countDocuments({ readAt: null }),
+      AdminNotification.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    return res.status(200).json({
+      error: false,
+      total,
+      unreadCount,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+      limit,
+      notifications
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to retrieve notifications",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2C-A: Retrieve unread notification count.
+ * Endpoint: GET /api/admin-dashboard/notifications/unread-count
+ */
+exports.getUnreadNotificationCount = async (req, res) => {
+  try {
+    const unreadCount = await AdminNotification.countDocuments({ readAt: null });
+    return res.status(200).json({
+      error: false,
+      unreadCount
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to retrieve unread notification count",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2C-A: Mark a single notification as read.
+ * Endpoint: PATCH /api/admin-dashboard/notifications/:id/read
+ */
+exports.markNotificationAsRead = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: true, message: "Invalid notification ID format" });
+  }
+
+  try {
+    const notification = await AdminNotification.findById(id);
+    if (!notification) {
+      return res.status(404).json({ error: true, message: "Notification not found" });
+    }
+
+    if (!notification.readAt) {
+      notification.readAt = new Date();
+      await notification.save();
+    }
+
+    return res.status(200).json({
+      error: false,
+      message: "Notification marked as read",
+      notification
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to update notification read state",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2C-A: Mark all unread notifications as read.
+ * Endpoint: PATCH /api/admin-dashboard/notifications/read-all
+ */
+exports.markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const now = new Date();
+    const result = await AdminNotification.updateMany(
+      { readAt: null },
+      { $set: { readAt: now } }
+    );
+
+    return res.status(200).json({
+      error: false,
+      message: "All notifications marked as read",
+      markedCount: result.modifiedCount || 0
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to mark all notifications as read",
+      details: err.message
+    });
+  }
+};
+
+/**
+ * Phase 4.2C-A: Admin-only bounded retry for failed email notification.
+ * Endpoint: POST /api/admin-dashboard/notifications/:id/retry-email
+ */
+exports.retryNotificationEmail = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: true, message: "Invalid notification ID format" });
+  }
+
+  try {
+    const result = await retryNotificationEmail(id);
+
+    if (!result.success) {
+      return res.status(400).json({
+        error: true,
+        message: result.message,
+        notification: result.notification
+      });
+    }
+
+    return res.status(200).json({
+      error: false,
+      message: result.message,
+      notification: result.notification
+    });
+  } catch (err) {
+    if (err.status === 404) {
+      return res.status(404).json({ error: true, message: err.message });
+    }
+    return res.status(500).json({
+      error: true,
+      message: "Failed to retry notification email",
+      details: err.message
+    });
+  }
+};
+

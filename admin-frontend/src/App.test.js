@@ -1,7 +1,11 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
-import API from "./api/api";
+import API, { fetchUnreadNotificationCount } from "./api/api";
+
+const mockFetchUnreadNotificationCount = jest.fn(() =>
+  Promise.resolve({ data: { error: false, unreadCount: 0 } })
+);
 
 // Mock the API client
 jest.mock("./api/api", () => {
@@ -21,14 +25,28 @@ jest.mock("./api/api", () => {
     default: mockApi,
     AdminAuth: original.AdminAuth,
     getImageUrl: original.getImageUrl,
+    fetchHotspots: (params) => mockApi.get("/admin-dashboard/hotspots", { params }),
+    fetchHotspotById: (id) => mockApi.get(`/admin-dashboard/hotspots/${id}`),
+    runHotspotRefresh: (options) => mockApi.post("/admin-dashboard/hotspots/run", options),
+    fetchNotifications: (params) => mockApi.get("/admin-dashboard/notifications", { params }),
+    fetchUnreadNotificationCount: (...args) => mockFetchUnreadNotificationCount(...args),
+    markNotificationRead: (id) => mockApi.patch(`/admin-dashboard/notifications/${id}/read`),
+    markAllNotificationsRead: () => mockApi.patch("/admin-dashboard/notifications/read-all"),
+    retryNotificationEmail: (id) => mockApi.post(`/admin-dashboard/notifications/${id}/retry-email`),
   };
 });
+
 
 describe("Admin Frontend Application Tests", () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
+    mockFetchUnreadNotificationCount.mockReset();
+    mockFetchUnreadNotificationCount.mockImplementation(() =>
+      Promise.resolve({ data: { error: false, unreadCount: 0 } })
+    );
   });
+
 
   test("1. Login form renders with secure admin-only fields", async () => {
     API.get.mockResolvedValueOnce({ data: {} });
@@ -676,5 +694,963 @@ describe("Admin Frontend Application Tests", () => {
     // Verify independent duplicate review badge
     expect(screen.getByTitle("Pending duplicate review")).toBeInTheDocument();
   });
+
+  test("15. Admin dashboard navigation includes Hotspots (DBSCAN) tab and switches view", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    // Profile check
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        admin: mockAdmin,
+        role: "admin",
+        isAdmin: true,
+      },
+    });
+
+    // Initial issues fetch on dashboard mount
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    // Verify Hotspots tab button exists
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+    expect(hotspotsTab).toBeInTheDocument();
+    expect(hotspotsTab).toHaveTextContent(/Hotspots \(DBSCAN\)/i);
+
+    // Mock response when switching to hotspots tab
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 2,
+        page: 1,
+        totalPages: 1,
+        limit: 10,
+        hotspots: [
+          {
+            _id: "66a000000000000000000001",
+            category: "pothole",
+            department: "Roads & Infrastructure",
+            status: "active",
+            distinctDefectCount: 3,
+            totalReportCount: 8,
+            totalVotes: 15,
+            meanSeverity: 8.2,
+            centroid: { type: "Point", coordinates: [77.72, 11.34] },
+            lastDetectedAt: new Date().toISOString(),
+          },
+          {
+            _id: "66a000000000000000000002",
+            category: "water_leak",
+            department: "Water Services",
+            status: "resolving",
+            distinctDefectCount: 2,
+            totalReportCount: 4,
+            totalVotes: 6,
+            meanSeverity: 5.4,
+            centroid: { type: "Point", coordinates: [77.73, 11.35] },
+            lastDetectedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+
+    // Click on Hotspots tab
+    fireEvent.click(hotspotsTab);
+
+    // Verify hotspots section is rendered
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Verify summary metric cards
+    expect(screen.getByTestId("hotspot-metric-total")).toHaveTextContent("2");
+    expect(screen.getByTestId("hotspot-metric-active")).toHaveTextContent("1");
+    expect(screen.getByTestId("hotspot-metric-resolving")).toHaveTextContent("1");
+    expect(screen.getByTestId("hotspot-metric-reports")).toHaveTextContent("12");
+
+    // Verify both hotspots are in the table
+    expect(screen.getByText("pothole")).toBeInTheDocument();
+    expect(screen.getByText("water leak")).toBeInTheDocument();
+  });
+
+  test("16. Hotspot table displays required attributes, status pills, and heuristic severity", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        admin: mockAdmin,
+        role: "admin",
+        isAdmin: true,
+      },
+    });
+
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 1,
+        page: 1,
+        totalPages: 1,
+        limit: 10,
+        hotspots: [
+          {
+            _id: "66a000000000000000000001",
+            category: "pothole",
+            department: "Roads & Infrastructure",
+            status: "active",
+            distinctDefectCount: 4,
+            totalReportCount: 11,
+            totalVotes: 23,
+            meanSeverity: 7.9,
+            centroid: { type: "Point", coordinates: [77.7212, 11.3456] },
+            lastDetectedAt: "2026-10-15T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(hotspotsTab);
+
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Verify table headers
+    expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Department" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Centroid/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Defects" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Reports" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Votes" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Severity" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Last Detected" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toBeInTheDocument();
+
+    // Verify row and cell contents
+    const row = screen.getByTestId("hotspot-row-66a000000000000000000001");
+    expect(row).toBeInTheDocument();
+    expect(row).toHaveTextContent("pothole");
+    expect(row).toHaveTextContent("Roads & Infrastructure");
+    expect(row).toHaveTextContent("active");
+    expect(row).toHaveTextContent("77.7212, 11.3456");
+    expect(row).toHaveTextContent("4");
+    expect(row).toHaveTextContent("11");
+    expect(row).toHaveTextContent("23");
+    expect(row).toHaveTextContent("7.9/10");
+    expect(screen.getByTestId("view-hotspot-btn-66a000000000000000000001")).toBeInTheDocument();
+  });
+
+  test("17. Hotspot filters allow filtering by category, status, and department", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, hotspots: [] },
+    });
+
+    fireEvent.click(hotspotsTab);
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Change category filter
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 1, hotspots: [] },
+    });
+
+    const categorySelect = screen.getByTestId("hotspot-category-filter");
+    fireEvent.change(categorySelect, { target: { value: "pothole" } });
+
+    await waitFor(() => {
+      expect(API.get).toHaveBeenCalledWith("/admin-dashboard/hotspots", expect.objectContaining({
+        params: expect.objectContaining({ category: "pothole" }),
+      }));
+    });
+  });
+
+  test("18. Manual Refresh Hotspots button triggers POST /run and renders returned summary", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, hotspots: [] },
+    });
+
+    fireEvent.click(hotspotsTab);
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Mock refresh endpoint response
+    API.post.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "DBSCAN clustering completed successfully",
+        summary: {
+          createdCount: 2,
+          updatedCount: 1,
+          resolvingCount: 0,
+          resolvedCount: 0,
+        },
+        durationMs: 95,
+      },
+    });
+
+    // Mock subsequent reload of hotspots
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 2, hotspots: [] },
+    });
+
+    const refreshBtn = screen.getByTestId("refresh-hotspots-btn");
+    fireEvent.click(refreshBtn);
+
+    expect(API.post).toHaveBeenCalledWith("/admin-dashboard/hotspots/run", {});
+
+    // Verify success banner with returned counts
+    expect(await screen.findByText(/DBSCAN clustering completed successfully in 95ms!/i)).toBeInTheDocument();
+    expect(screen.getByText(/Created: 2, Updated: 1, Resolving: 0, Resolved: 0/i)).toBeInTheDocument();
+  });
+
+  test("19. Manual Refresh Hotspots gracefully handles HTTP 409 Conflict", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, hotspots: [] },
+    });
+
+    fireEvent.click(hotspotsTab);
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Mock 409 conflict
+    API.post.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          error: true,
+          message: "Hotspot refresh job is currently running. Please wait for the current run to complete.",
+          reason: "LOCK_ACTIVE",
+        },
+      },
+    });
+
+    const refreshBtn = screen.getByTestId("refresh-hotspots-btn");
+    fireEvent.click(refreshBtn);
+
+    // Verify conflict warning message
+    expect(
+      await screen.findByText("Hotspot refresh job is currently running. Please wait for the current run to complete.")
+    ).toBeInTheDocument();
+
+    // Verify button is re-enabled
+    expect(refreshBtn).not.toBeDisabled();
+  });
+
+  test("20. Hotspot details modal loads GET /:id, shows centroid and constituent issues, and protects private data", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+    const hotspotsTab = await screen.findByTestId("tab-hotspots");
+
+    const sampleHotspot = {
+      _id: "66a000000000000000000099",
+      category: "pothole",
+      department: "Roads & Infrastructure",
+      status: "active",
+      distinctDefectCount: 2,
+      totalReportCount: 3,
+      totalVotes: 8,
+      meanSeverity: 8.0,
+      centroid: { type: "Point", coordinates: [77.725, 11.345] },
+      lastDetectedAt: "2026-10-15T12:00:00.000Z",
+    };
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 1, hotspots: [sampleHotspot] },
+    });
+
+    fireEvent.click(hotspotsTab);
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+
+    // Mock GET /admin-dashboard/hotspots/:id
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        hotspot: {
+          ...sampleHotspot,
+          radiusMeters: 38.5,
+          firstDetectedAt: "2026-10-14T08:00:00.000Z",
+          alertSent: true,
+          alertSentAt: "2026-10-14T08:05:00.000Z",
+          issues: [
+            {
+              _id: "660000000000000000000777",
+              type: "pothole",
+              description: "Massive crater on arterial road",
+              status: "reported",
+              severity: 8.5,
+              votes: 5,
+              userId: { fullName: "Jane Citizen" },
+              location: { coordinates: [77.7251, 11.3451] },
+              createdAt: "2026-10-14T08:00:00.000Z",
+            },
+          ],
+        },
+      },
+    });
+
+    const viewBtn = screen.getByTestId("view-hotspot-btn-66a000000000000000000099");
+    fireEvent.click(viewBtn);
+
+    // Verify modal header and details
+    expect(await screen.findByText("Hotspot #66a000000000000000000099")).toBeInTheDocument();
+    expect(screen.getByText("[77.725, 11.345]")).toBeInTheDocument();
+    expect(screen.getByText("≈ 38.5 m")).toBeInTheDocument();
+
+    // Verify constituent issue summary
+    expect(screen.getByText("Massive crater on arterial road")).toBeInTheDocument();
+    expect(screen.getByText("Reporter: Jane Citizen")).toBeInTheDocument();
+    expect(screen.getByText("Severity: 8.5/10")).toBeInTheDocument();
+
+    // Privacy assertion: No internal notes, embeddings, or tokens
+    expect(screen.queryByText(/internalNotes/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/embedding/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/aiDiagnostics/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password/i)).not.toBeInTheDocument();
+
+    // Close modal
+    const closeBtn = screen.getByTestId("hotspot-modal-close-btn");
+    fireEvent.click(closeBtn);
+    expect(screen.queryByText("Hotspot #66a000000000000000000099")).not.toBeInTheDocument();
+  });
+
+  test("21. Notification bell and tab render with unread count badge, and clicking opens Notification Center", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    mockFetchUnreadNotificationCount.mockResolvedValueOnce({
+      data: { error: false, unreadCount: 3 },
+    });
+
+    render(<App />);
+
+    // Verify Notification Bell button with badge exists in navbar
+    const bellBtn = await screen.findByTestId("btn-notification-bell");
+    expect(bellBtn).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("bell-unread-badge")).toHaveTextContent("3");
+    });
+
+    // Verify Notifications Tab in tabs bar
+    const notifTab = screen.getByTestId("tab-notifications");
+    expect(notifTab).toBeInTheDocument();
+    expect(screen.getByTestId("tab-unread-badge")).toHaveTextContent("3");
+
+
+    // Mock GET /admin-dashboard/notifications
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 2,
+        unreadCount: 3,
+        page: 1,
+        totalPages: 1,
+        limit: 10,
+        notifications: [
+          {
+            _id: "66c000000000000000000001",
+            type: "hotspot_detected",
+            hotspotId: "66a000000000000000000001",
+            title: "High-Density Pothole Hotspot Detected",
+            message: "New hotspot cluster detected with 4 distinct defects.",
+            severity: 8.5,
+            dedupeKey: "hotspot-66a1-detected",
+            readAt: null,
+            emailStatus: "sent",
+            emailSentAt: "2026-10-15T12:00:00.000Z",
+            emailAttemptCount: 1,
+            createdAt: "2026-10-15T12:00:00.000Z",
+          },
+          {
+            _id: "66c000000000000000000002",
+            type: "hotspot_escalated",
+            hotspotId: "66a000000000000000000002",
+            title: "Hotspot Cluster Rapidly Escalating",
+            message: "Cluster report volume grew by 60% in the last 24h.",
+            severity: 7.2,
+            dedupeKey: "hotspot-66a2-escalated",
+            readAt: "2026-10-15T13:00:00.000Z",
+            emailStatus: "pending",
+            emailAttemptCount: 0,
+            createdAt: "2026-10-15T13:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    // Click on bell button to open Notification Center
+    fireEvent.click(bellBtn);
+
+    // Verify Notification Center view
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+    expect(screen.getByText("Admin Notification Center")).toBeInTheDocument();
+    expect(await screen.findByTestId("nc-unread-count-badge")).toHaveTextContent("3 Unread");
+
+    // Verify both notifications render with appropriate visual cues
+    expect(screen.getByText("High-Density Pothole Hotspot Detected")).toBeInTheDocument();
+    expect(screen.getByText("Hotspot Cluster Rapidly Escalating")).toBeInTheDocument();
+
+    // Verify distinct alert type tags
+    expect(screen.getByTestId("type-badge-66c000000000000000000001")).toHaveTextContent(/Hotspot Detected/i);
+    expect(screen.getByTestId("type-badge-66c000000000000000000002")).toHaveTextContent(/Hotspot Escalated/i);
+
+    // Verify read / unread state pills
+    expect(screen.getByTestId("badge-unread-66c000000000000000000001")).toHaveTextContent("Unread");
+    expect(screen.getByTestId("badge-read-66c000000000000000000002")).toHaveTextContent("Read");
+
+    // Verify heuristic severity badge
+    expect(screen.getByTestId("severity-badge-66c000000000000000000001")).toHaveTextContent("8.5/10");
+    expect(screen.getByTestId("severity-badge-66c000000000000000000001")).toHaveTextContent("High");
+
+    // Verify email status badges
+    expect(screen.getByTestId("email-status-box-66c000000000000000000001")).toHaveTextContent(/Email Sent/i);
+    expect(screen.getByTestId("email-status-box-66c000000000000000000002")).toHaveTextContent(/Email Pending/i);
+
+    // Verify unread notification has "Mark as Read" action button
+    expect(screen.getByTestId("mark-read-btn-66c000000000000000000001")).toBeInTheDocument();
+    // Read notification should NOT have "Mark as Read" button
+    expect(screen.queryByTestId("mark-read-btn-66c000000000000000000002")).not.toBeInTheDocument();
+  });
+
+  test("22. Individual and bulk mark-as-read actions update notification state, decrement unread count, and disable buttons", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    mockFetchUnreadNotificationCount.mockResolvedValueOnce({
+      data: { error: false, unreadCount: 2 },
+    });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    // Mock GET /admin-dashboard/notifications
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 2,
+        unreadCount: 2,
+        page: 1,
+        totalPages: 1,
+        limit: 10,
+        notifications: [
+          {
+            _id: "66c000000000000000000010",
+            type: "hotspot_detected",
+            title: "Cluster One Detected",
+            message: "Details of cluster one",
+            readAt: null,
+            emailStatus: "sent",
+            createdAt: "2026-10-15T12:00:00.000Z",
+          },
+          {
+            _id: "66c000000000000000000020",
+            type: "hotspot_detected",
+            title: "Cluster Two Detected",
+            message: "Details of cluster two",
+            readAt: null,
+            emailStatus: "sent",
+            createdAt: "2026-10-15T12:10:00.000Z",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(notifTab);
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+
+    // Mock individual mark read: PATCH /notifications/66c000000000000000000010/read
+    API.patch.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "Notification marked as read",
+        notification: {
+          _id: "66c000000000000000000010",
+          readAt: "2026-10-15T12:30:00.000Z",
+        },
+      },
+    });
+
+    const markReadBtn1 = screen.getByTestId("mark-read-btn-66c000000000000000000010");
+    fireEvent.click(markReadBtn1);
+
+    await waitFor(() => {
+      expect(API.patch).toHaveBeenCalledWith("/admin-dashboard/notifications/66c000000000000000000010/read");
+    });
+
+    // Notification 1 state changes to Read
+    expect(await screen.findByTestId("badge-read-66c000000000000000000010")).toHaveTextContent("Read");
+    expect(screen.queryByTestId("mark-read-btn-66c000000000000000000010")).not.toBeInTheDocument();
+
+    // Verify unread count decremented to 1 in navbar bell badge
+    expect(screen.getByTestId("bell-unread-badge")).toHaveTextContent("1");
+
+    // Test Bulk "Mark All as Read"
+    API.patch.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "All notifications marked as read",
+        markedCount: 1,
+      },
+    });
+
+    const markAllBtn = screen.getByTestId("mark-all-read-btn");
+    expect(markAllBtn).not.toBeDisabled();
+    fireEvent.click(markAllBtn);
+
+    await waitFor(() => {
+      expect(API.patch).toHaveBeenCalledWith("/admin-dashboard/notifications/read-all");
+    });
+
+    // Success banner
+    expect(await screen.findByTestId("nc-feedback-alert")).toHaveTextContent(/All notifications marked as read/i);
+
+    // Notification 2 is now also marked as read
+    expect(await screen.findByTestId("badge-read-66c000000000000000000020")).toHaveTextContent("Read");
+
+    // Mark All button becomes disabled because unreadCount is 0
+    expect(markAllBtn).toBeDisabled();
+    expect(screen.queryByTestId("bell-unread-badge")).not.toBeInTheDocument();
+  });
+
+  test("23. Notification center filters by read state and alert type, and resets filters", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    // Initial load
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, notifications: [] },
+    });
+
+    fireEvent.click(notifTab);
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+
+    // Filter by Read State: Unread Only ("false")
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 1, notifications: [] },
+    });
+
+    const readSelect = screen.getByTestId("nc-read-filter");
+    fireEvent.change(readSelect, { target: { value: "false" } });
+
+    await waitFor(() => {
+      expect(API.get).toHaveBeenCalledWith(
+        "/admin-dashboard/notifications",
+        expect.objectContaining({
+          params: expect.objectContaining({ read: "false" }),
+        })
+      );
+    });
+
+    // Filter by Alert Type: Hotspot Escalated
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 1, notifications: [] },
+    });
+
+    const typeSelect = screen.getByTestId("nc-type-filter");
+    fireEvent.change(typeSelect, { target: { value: "hotspot_escalated" } });
+
+    await waitFor(() => {
+      expect(API.get).toHaveBeenCalledWith(
+        "/admin-dashboard/notifications",
+        expect.objectContaining({
+          params: expect.objectContaining({ type: "hotspot_escalated" }),
+        })
+      );
+    });
+
+    // Reset Filters button appears and works
+    const resetBtn = screen.getByTestId("nc-reset-filters-btn");
+    expect(resetBtn).toBeInTheDocument();
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, notifications: [] },
+    });
+
+    fireEvent.click(resetBtn);
+
+    await waitFor(() => {
+      expect(readSelect).toHaveValue("all");
+      expect(typeSelect).toHaveValue("all");
+    });
+  });
+
+  test("24. Retry email action succeeds for failed notifications and handles backend 400 rejection", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    const failedNotification = {
+      _id: "66c000000000000000000088",
+      type: "hotspot_detected",
+      title: "Hotspot with failed email",
+      message: "Notification where email failed due to network timeout",
+      readAt: null,
+      emailStatus: "failed",
+      emailAttemptCount: 2,
+      emailLastError: "Connection timeout to smtp.municipal.internal",
+      createdAt: "2026-10-15T12:00:00.000Z",
+    };
+
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 1,
+        unreadCount: 1,
+        notifications: [failedNotification],
+      },
+    });
+
+    fireEvent.click(notifTab);
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+
+    // Verify retry button exists
+    const retryBtn = screen.getByTestId("retry-email-btn-66c000000000000000000088");
+    expect(retryBtn).toBeInTheDocument();
+    expect(retryBtn).toHaveTextContent("Retry Email");
+
+    // 1. Successful retry
+    API.post.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "Email retry sent successfully",
+        notification: {
+          ...failedNotification,
+          emailStatus: "sent",
+          emailAttemptCount: 3,
+          emailSentAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(API.post).toHaveBeenCalledWith("/admin-dashboard/notifications/66c000000000000000000088/retry-email");
+    });
+
+    expect(await screen.findByTestId("nc-feedback-alert")).toHaveTextContent("Email retry sent successfully");
+
+    // 2. Test 400 rejection on retry
+    API.post.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          error: true,
+          message: "SMTP service is currently offline or unreachable.",
+          notification: {
+            ...failedNotification,
+            emailStatus: "failed",
+            emailAttemptCount: 4,
+          },
+        },
+      },
+    });
+
+    // Re-click retry
+    const retryBtnAfter = screen.queryByTestId("retry-email-btn-66c000000000000000000088");
+    if (retryBtnAfter) {
+      fireEvent.click(retryBtnAfter);
+      expect(await screen.findByTestId("nc-feedback-alert")).toHaveTextContent(
+        "SMTP service is currently offline or unreachable."
+      );
+    }
+  });
+
+  test("25. Retry email is permanently disabled when max retry limit (5) is reached", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    const maxedNotification = {
+      _id: "66c000000000000000000099",
+      type: "hotspot_escalated",
+      title: "Escalated cluster with exhausted retries",
+      message: "Exhausted all 5 attempts",
+      readAt: null,
+      emailStatus: "failed",
+      emailAttemptCount: 5,
+      emailLastError: "Max attempts reached",
+      createdAt: "2026-10-15T12:00:00.000Z",
+    };
+
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 1,
+        unreadCount: 1,
+        notifications: [maxedNotification],
+      },
+    });
+
+    fireEvent.click(notifTab);
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+
+    const retryBtn = screen.getByTestId("retry-email-btn-66c000000000000000000099");
+    expect(retryBtn).toBeDisabled();
+    expect(retryBtn).toHaveTextContent("Retry Limit Reached");
+
+    // Clicking disabled button should NOT trigger POST
+    fireEvent.click(retryBtn);
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
+  test("26. Clicking View Hotspot switches to Hotspots tab and opens hotspot detail modal", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        total: 1,
+        unreadCount: 0,
+        notifications: [
+          {
+            _id: "66c000000000000000000077",
+            type: "hotspot_detected",
+            hotspotId: "66a000000000000000000055",
+            title: "Road damage cluster",
+            message: "Check constituent issues in hotspot modal",
+            readAt: "2026-10-15T12:00:00.000Z",
+            emailStatus: "sent",
+            createdAt: "2026-10-15T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(notifTab);
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+
+    const viewHotspotBtn = screen.getByTestId("view-hotspot-link-66c000000000000000000077");
+    expect(viewHotspotBtn).toBeInTheDocument();
+
+    // Prepare mock for switching to Hotspots tab and fetching hotspot detail
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 1, hotspots: [] },
+    });
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        hotspot: {
+          _id: "66a000000000000000000055",
+          category: "road_damage",
+          department: "Roads & Infrastructure",
+          status: "active",
+          distinctDefectCount: 3,
+          totalReportCount: 6,
+          centroid: { type: "Point", coordinates: [77.72, 11.34] },
+          issues: [],
+        },
+      },
+    });
+
+    // Click "View Hotspot"
+    fireEvent.click(viewHotspotBtn);
+
+    // Should switch to hotspots section and open detail modal
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+    expect(await screen.findByText("Hotspot #66a000000000000000000055")).toBeInTheDocument();
+  });
+
+  test("27. Handles notification error with retry, and empty states", async () => {
+    const mockAdmin = {
+      adminId: "660000000000000000000001",
+      email: "admin@civicvision.gov",
+      fullName: "Super Admin",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+
+    render(<App />);
+
+    const notifTab = await screen.findByTestId("tab-notifications");
+
+    // 1. Error state
+    API.get.mockRejectedValueOnce({
+      response: { status: 500, data: { message: "Notifications service unavailable" } },
+    });
+
+    fireEvent.click(notifTab);
+
+    expect(await screen.findByTestId("nc-error-state")).toBeInTheDocument();
+    expect(screen.getByText("Notifications service unavailable")).toBeInTheDocument();
+
+    // 2. Retry succeeds with empty list
+    API.get.mockResolvedValueOnce({
+      data: { error: false, total: 0, notifications: [] },
+    });
+
+    const retryBtn = screen.getByRole("button", { name: /Try Again/i });
+    fireEvent.click(retryBtn);
+
+    expect(await screen.findByTestId("nc-empty-state")).toBeInTheDocument();
+    expect(screen.getByText("No Notifications Found")).toBeInTheDocument();
+  });
 });
+
 

@@ -69,4 +69,15 @@ export const AdminAuth = {
   },
 };
 
+export const fetchHotspots = (params) => API.get("/admin-dashboard/hotspots", { params });
+export const fetchHotspotById = (id) => API.get(`/admin-dashboard/hotspots/${id}`);
+export const runHotspotRefresh = (options) => API.post("/admin-dashboard/hotspots/run", options);
+
+export const fetchNotifications = (params) => API.get("/admin-dashboard/notifications", { params });
+export const fetchUnreadNotificationCount = () => API.get("/admin-dashboard/notifications/unread-count");
+export const markNotificationRead = (id) => API.patch(`/admin-dashboard/notifications/${id}/read`);
+export const markAllNotificationsRead = () => API.patch("/admin-dashboard/notifications/read-all");
+export const retryNotificationEmail = (id) => API.post(`/admin-dashboard/notifications/${id}/retry-email`);
+
 export default API;
+
