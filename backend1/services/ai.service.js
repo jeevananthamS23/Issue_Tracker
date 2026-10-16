@@ -490,6 +490,203 @@ async function classifyIssueImage(imageUrl, options = {}) {
   }
 }
 
+/**
+ * Calls FastAPI microservice endpoint POST /extract-ocr-gps to extract GPS watermark text.
+ *
+ * Implements strict security, validation, and timeout controls:
+ * 1. AbortSignal timeout bounded by timeoutMs (default 2500ms).
+ * 2. Authenticates using configured AI_SERVICE_API_KEY via X-API-Key header.
+ * 3. Does not log API keys, full signed URLs, or sensitive raw OCR text.
+ * 4. Validates returned latitude [-90, 90] and longitude [-180, 180] as finite numbers.
+ * 5. Returns a structured, safe result without throwing (soft failure).
+ *
+ * @param {string} imageUrl - Public HTTP/HTTPS URL of the civic issue photo.
+ * @param {number} [timeoutMs=2500] - Request timeout in milliseconds.
+ * @returns {Promise<{
+ *   success: boolean,
+ *   found: boolean,
+ *   latitude: number|null,
+ *   longitude: number|null,
+ *   confidence: number|null,
+ *   format: string|null,
+ *   rawText?: string|null,
+ *   error: string|null
+ * }>}
+ */
+async function extractOcrGps(imageUrl, timeoutMs = 2500) {
+  if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.trim()) {
+    return {
+      success: false,
+      found: false,
+      latitude: null,
+      longitude: null,
+      confidence: null,
+      format: null,
+      rawText: null,
+      error: "Image URL must be a non-empty string"
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (process.env.AI_SERVICE_API_KEY) {
+      headers["X-API-Key"] = process.env.AI_SERVICE_API_KEY.trim();
+    }
+
+    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/extract-ocr-gps`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ image_url: imageUrl.trim() }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: `AI service returned HTTP ${response.status}: ${errText}`
+      };
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseErr) {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: "Malformed JSON response from AI service"
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: "Invalid response payload from AI service"
+      };
+    }
+
+    // Handle OCR system failure (e.g., Tesseract not available or execution error)
+    if (data.success === false) {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: data.error || "OCR processing failed or Tesseract is unavailable"
+      };
+    }
+
+    // OCR succeeded, but no GPS coordinates were found in the text
+    if (!data.found) {
+      return {
+        success: true,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: data.error || null
+      };
+    }
+
+    // Coordinates were detected: strictly validate numbers and ranges
+    const lat = Number(data.latitude);
+    const lng = Number(data.longitude);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: `AI service returned invalid coordinate bounds [lat: ${data.latitude}, lng: ${data.longitude}]`
+      };
+    }
+
+    // Validate confidence score [0.0, 1.0]
+    let validatedConfidence = null;
+    if (typeof data.confidence === "number" && Number.isFinite(data.confidence)) {
+      if (data.confidence >= 0.0 && data.confidence <= 1.0) {
+        validatedConfidence = Math.round(data.confidence * 1000) / 1000;
+      }
+    }
+
+    // Sanitize and bound rawText (max 500 characters, no control characters)
+    let sanitizedRawText = null;
+    if (typeof data.raw_text === "string" && data.raw_text.trim()) {
+      sanitizedRawText = data.raw_text
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+        .trim()
+        .slice(0, 500);
+    }
+
+    return {
+      success: true,
+      found: true,
+      latitude: Math.round(lat * 1000000) / 1000000,
+      longitude: Math.round(lng * 1000000) / 1000000,
+      confidence: validatedConfidence,
+      format: typeof data.format === "string" ? data.format : null,
+      rawText: sanitizedRawText,
+      error: null
+    };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        rawText: null,
+        error: `AI service OCR request timed out after ${timeoutMs}ms`
+      };
+    }
+    return {
+      success: false,
+      found: false,
+      latitude: null,
+      longitude: null,
+      confidence: null,
+      format: null,
+      rawText: null,
+      error: `Failed to connect to AI OCR service: ${err.message}`
+    };
+  }
+}
+
 module.exports = {
   cosineSimilarity,
   validateEmbeddingVector,
@@ -498,6 +695,7 @@ module.exports = {
   compareEmbeddingWithCandidates,
   assessIssueDuplicates,
   classifyIssueImage,
+  extractOcrGps,
   DEFAULT_SIMILARITY_THRESHOLD,
   EXPECTED_EMBEDDING_DIM
 };

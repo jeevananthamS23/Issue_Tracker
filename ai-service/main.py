@@ -22,18 +22,21 @@ Provides:
 
 import os
 import io
+import re
 import math
 import socket
 import ipaddress
 import urllib.parse
 import logging
+import subprocess
 import requests
 from contextlib import asynccontextmanager
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, UploadFile, File, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
+import pytesseract
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("civicvision.ai")
@@ -51,6 +54,17 @@ AI_SERVICE_API_KEY = os.getenv("AI_SERVICE_API_KEY", "").strip()
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", 15 * 1024 * 1024))  # 15 MB
 MAX_IMAGE_PIXELS = int(os.getenv("MAX_IMAGE_PIXELS", 25_000_000))       # 25 Megapixels
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+# Tesseract OCR Configuration (Phase F5-B / Feature F5)
+# Local development:
+# Windows: Install from UB-Mannheim/tesseract/wiki and set TESSERACT_CMD if not in PATH:
+#   e.g. TESSERACT_CMD="C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+# Linux / Ubuntu / Debian: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+# macOS: brew install tesseract
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", "").strip()
+if TESSERACT_CMD:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+OCR_TIMEOUT_SECONDS = float(os.getenv("OCR_TIMEOUT_SECONDS", "5.0"))
 
 # Domain allowlist: Defaults to Cloudinary domains used by the application.
 DEFAULT_ALLOWED_HOSTS = "res.cloudinary.com,*.cloudinary.com,cloudinary.com"
@@ -622,9 +636,10 @@ class CompareResponse(BaseModel):
 
 @app.get("/health")
 def health_check():
-    """Liveness probe: reports overall server status, truthful model identity, and configuration."""
+    """Liveness probe: reports overall server status, truthful model identity, OCR availability, and configuration."""
     ready, model_reported, err = is_model_ready()
     info = get_active_model_info()
+    tesseract_ready, tesseract_ver = is_tesseract_available()
     return {
         "status": "ok",
         "live": True,
@@ -640,7 +655,10 @@ def health_check():
         "allowed_hosts": ALLOWED_HOSTS,
         "max_image_bytes": MAX_IMAGE_BYTES,
         "civic_classifier_ready": (_civic_model is not None),
-        "civic_checkpoint": CIVIC_MODEL_PATH or None
+        "civic_checkpoint": CIVIC_MODEL_PATH or None,
+        "ocr_available": tesseract_ready,
+        "ocr_engine": "tesseract" if tesseract_ready else "unavailable",
+        "ocr_version": tesseract_ver if tesseract_ready else None
     }
 
 
@@ -886,6 +904,570 @@ async def classify_issue_upload(
         is_trained_model=False,
         severity_mode=severity_mode,
         status="unavailable"
+    )
+
+
+# ============================================================================
+# OCR GPS Extraction Engine (Phase F5-B / Feature F5)
+# ============================================================================
+
+class OcrGpsUrlRequest(BaseModel):
+    image_url: str = Field(..., description="Public HTTP/HTTPS URL of the civic issue photo")
+
+
+class OcrGpsResponse(BaseModel):
+    success: bool = Field(..., description="Whether OCR execution completed without system errors")
+    found: bool = Field(..., description="Whether valid GPS coordinates were successfully parsed")
+    latitude: Optional[float] = Field(None, description="Extracted latitude in decimal degrees [-90.0, +90.0]")
+    longitude: Optional[float] = Field(None, description="Extracted longitude in decimal degrees [-180.0, +180.0]")
+    raw_text: Optional[str] = Field(None, description="Extracted OCR text, bounded in length")
+    confidence: Optional[float] = Field(None, description="Heuristic pattern confidence score [0.0, 1.0] (not a calibrated probability)")
+    format: Optional[str] = Field(None, description="Format detected: decimal_degrees, degrees_minutes_seconds, or None")
+    error: Optional[str] = Field(None, description="Reason if coordinates could not be extracted or if OCR failed")
+
+
+# DMS Regex Patterns
+# Full paired DMS (on same line) - prevents prefix and suffix collision
+DMS_PAIR_SUFFIX = re.compile(
+    r'(?<![A-Za-z0-9.])(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*([NSns])\s*[,;\s/|]+\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*([EWew])(?![A-Za-z0-9])'
+)
+DMS_PAIR_PREFIX = re.compile(
+    r'(?<![A-Za-z0-9])([NSns])\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*[,;\s/|]+\s*([EWew])\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?(?![A-Za-z0-9])'
+)
+DMS_PAIR_SUFFIX_REV = re.compile(
+    r'(?<![A-Za-z0-9.])(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*([EWew])\s*[,;\s/|]+\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*([NSns])(?![A-Za-z0-9])'
+)
+DMS_PAIR_PREFIX_REV = re.compile(
+    r'(?<![A-Za-z0-9])([EWew])\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*[,;\s/|]+\s*([NSns])\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?(?![A-Za-z0-9])'
+)
+
+# Single Component DMS Patterns (for separate lines)
+DMS_COMPONENT_SUFFIX = re.compile(
+    r'(?<![A-Za-z0-9.])(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?\s*([NSEWnsew])(?![A-Za-z0-9])'
+)
+DMS_COMPONENT_PREFIX = re.compile(
+    r'(?<![A-Za-z0-9])([NSEWnsew])\s*(\d{1,3})\s*(?:°|deg|degrees|\*|\^|d)?\s*(\d{1,2})\s*(?:\'|’|min|m)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:"|”|\'\'|sec|s)?(?![A-Za-z0-9])'
+)
+
+# Labeled Decimal Degrees (Lat / Lon)
+LABELED_LAT = re.compile(
+    r'(?i)\b(?:lat|latitude)\s*[:=]?\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*(?:°|deg)?\s*([NSns])?\b'
+)
+LABELED_LAT_PREFIX = re.compile(
+    r'(?i)\b(?:lat|latitude)\s*[:=]?\s*([NSns])\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*(?:°|deg)?\b'
+)
+
+LABELED_LON = re.compile(
+    r'(?i)\b(?:lon|long|lng|longitude)\s*[:=]?\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*(?:°|deg)?\s*([EWew])?\b'
+)
+LABELED_LON_PREFIX = re.compile(
+    r'(?i)\b(?:lon|long|lng|longitude)\s*[:=]?\s*([EWew])\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*(?:°|deg)?\b'
+)
+
+# Unlabeled Decimal Degrees with Hemisphere Suffixes/Prefixes
+UNLABELED_PAIR_SUFFIX = re.compile(
+    r'(?<![A-Za-z0-9.])([+-]?[0-9]{1,2}(?:\.[0-9]{2,8}))\s*°?\s*([NSns])\s*[,;\s/|]+\s*([+-]?[0-9]{1,3}(?:\.[0-9]{2,8}))\s*°?\s*([EWew])(?![A-Za-z0-9])'
+)
+UNLABELED_PAIR_PREFIX = re.compile(
+    r'(?<![A-Za-z0-9])([NSns])\s*([+-]?[0-9]{1,2}(?:\.[0-9]{2,8}))\s*°?\s*[,;\s/|]+\s*([EWew])\s*([+-]?[0-9]{1,3}(?:\.[0-9]{2,8}))\s*°?(?![A-Za-z0-9])'
+)
+
+# GPS / Location prefix with decimal coordinates
+GPS_PREFIX_PAIR = re.compile(
+    r'(?i)\b(?:gps|location|coord|coordinates|geo)\s*[:=]?\s*([+-]?[0-9]{1,2}\.[0-9]{2,8})\s*[,;\s/|]+\s*([+-]?[0-9]{1,3}\.[0-9]{2,8})\b'
+)
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Computes great-circle distance between two GPS coordinates in meters
+    using the Haversine formula on a spherical Earth (R = 6,371,000 meters).
+    """
+    R = 6371000.0  # Earth radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (math.sin(delta_phi / 2.0) ** 2 +
+         math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2))
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
+
+
+def validate_coordinates(lat: float, lon: float) -> bool:
+    """
+    Validates that latitude and longitude are within standard geographic boundaries.
+    - Latitude: [-90.0, +90.0]
+    - Longitude: [-180.0, +180.0]
+    """
+    if lat is None or lon is None:
+        return False
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        return False
+    if not (-90.0 <= lat <= 90.0):
+        return False
+    if not (-180.0 <= lon <= 180.0):
+        return False
+    return True
+
+
+def dms_to_decimal(degrees: float, minutes: float, seconds: float, hemisphere: str) -> Optional[float]:
+    """
+    Converts degrees, minutes, seconds and hemisphere to signed decimal degrees.
+    Strictly validates range:
+    - 0 <= minutes < 60
+    - 0 <= seconds < 60
+    - Latitude: 0 <= degrees <= 90 (if degrees == 90, minutes and seconds must be 0)
+    - Longitude: 0 <= degrees <= 180 (if degrees == 180, minutes and seconds must be 0)
+    """
+    if not (0.0 <= minutes < 60.0):
+        return None
+    if not (0.0 <= seconds < 60.0):
+        return None
+
+    hemi = hemisphere.upper().strip()
+    if hemi in ("N", "S"):
+        if not (0.0 <= degrees <= 90.0):
+            return None
+        if degrees == 90.0 and (minutes > 0.0 or seconds > 0.0):
+            return None
+    elif hemi in ("E", "W"):
+        if not (0.0 <= degrees <= 180.0):
+            return None
+        if degrees == 180.0 and (minutes > 0.0 or seconds > 0.0):
+            return None
+    else:
+        return None
+
+    val = float(degrees) + (float(minutes) / 60.0) + (float(seconds) / 3600.0)
+    if hemi in ("S", "W"):
+        val = -abs(val)
+    elif hemi in ("N", "E"):
+        val = abs(val)
+
+    return round(val, 6)
+
+
+def _spans_overlap(s1: Tuple[int, int], s2: Tuple[int, int]) -> bool:
+    return s1[0] < s2[1] and s1[1] > s2[0]
+
+
+def parse_dms_candidates(text: str) -> List[Dict[str, Any]]:
+    """Extracts DMS coordinate pairs with paired regex and single-line/cross-line support."""
+    candidates = []
+    lines = text.splitlines()
+
+    # 1. First search for complete DMS pairs on each line
+    for line in lines:
+        if not line.strip():
+            continue
+
+        for m in DMS_PAIR_SUFFIX.finditer(line):
+            lat = dms_to_decimal(float(m.group(1)), float(m.group(2)), float(m.group(3)), m.group(4))
+            lon = dms_to_decimal(float(m.group(5)), float(m.group(6)), float(m.group(7)), m.group(8))
+            if lat is not None and lon is not None and validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "confidence": 0.95,
+                    "format": "degrees_minutes_seconds"
+                })
+
+        for m in DMS_PAIR_PREFIX.finditer(line):
+            lat = dms_to_decimal(float(m.group(2)), float(m.group(3)), float(m.group(4)), m.group(1))
+            lon = dms_to_decimal(float(m.group(6)), float(m.group(7)), float(m.group(8)), m.group(5))
+            if lat is not None and lon is not None and validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "confidence": 0.95,
+                    "format": "degrees_minutes_seconds"
+                })
+
+        for m in DMS_PAIR_SUFFIX_REV.finditer(line):
+            lon = dms_to_decimal(float(m.group(1)), float(m.group(2)), float(m.group(3)), m.group(4))
+            lat = dms_to_decimal(float(m.group(5)), float(m.group(6)), float(m.group(7)), m.group(8))
+            if lat is not None and lon is not None and validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "confidence": 0.95,
+                    "format": "degrees_minutes_seconds"
+                })
+
+        for m in DMS_PAIR_PREFIX_REV.finditer(line):
+            lon = dms_to_decimal(float(m.group(2)), float(m.group(3)), float(m.group(4)), m.group(1))
+            lat = dms_to_decimal(float(m.group(6)), float(m.group(7)), float(m.group(8)), m.group(5))
+            if lat is not None and lon is not None and validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "confidence": 0.95,
+                    "format": "degrees_minutes_seconds"
+                })
+
+    if candidates:
+        return candidates
+
+    # 2. If no full pair was on a single line, check for individual components across lines
+    # (e.g. Lat on line 1, Lon on line 2)
+    lats = []
+    lons = []
+
+    for line in lines:
+        if not line.strip():
+            continue
+
+        comps = []
+        matched_spans = []
+
+        # Check prefix first (e.g. S 11°... or N 11°...)
+        for m in DMS_COMPONENT_PREFIX.finditer(line):
+            val = dms_to_decimal(float(m.group(2)), float(m.group(3)), float(m.group(4)), m.group(1))
+            if val is not None:
+                comps.append((val, m.group(1).upper(), m.start()))
+                matched_spans.append((m.start(), m.end()))
+
+        # Check suffix for remaining non-overlapping spans
+        for m in DMS_COMPONENT_SUFFIX.finditer(line):
+            if any(_spans_overlap((m.start(), m.end()), s) for s in matched_spans):
+                continue
+            val = dms_to_decimal(float(m.group(1)), float(m.group(2)), float(m.group(3)), m.group(4))
+            if val is not None:
+                comps.append((val, m.group(4).upper(), m.start()))
+                matched_spans.append((m.start(), m.end()))
+
+        for val, hemi, _ in comps:
+            if hemi in ("N", "S"):
+                lats.append(val)
+            elif hemi in ("E", "W"):
+                lons.append(val)
+
+    if len(lats) == 1 and len(lons) == 1:
+        if validate_coordinates(lats[0], lons[0]):
+            candidates.append({
+                "latitude": lats[0],
+                "longitude": lons[0],
+                "confidence": 0.95,
+                "format": "degrees_minutes_seconds"
+            })
+
+    return candidates
+
+
+def parse_decimal_candidates(text: str) -> List[Dict[str, Any]]:
+    """Extracts decimal degree coordinate pairs from labeled and hemisphere-marked patterns."""
+    candidates = []
+
+    # 1. Check GPS/Location prefixed pairs
+    for m in GPS_PREFIX_PAIR.finditer(text):
+        try:
+            lat = float(m.group(1))
+            lon = float(m.group(2))
+            if validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": lat,
+                    "longitude": lon,
+                    "confidence": 0.85,
+                    "format": "decimal_degrees"
+                })
+        except ValueError:
+            pass
+
+    # 2. Check unlabeled pairs with explicit hemisphere suffixes: 11.342423 N 77.728165 E
+    for m in UNLABELED_PAIR_SUFFIX.finditer(text):
+        try:
+            lat_val = float(m.group(1))
+            lat_hemi = m.group(2).upper()
+            lon_val = float(m.group(3))
+            lon_hemi = m.group(4).upper()
+
+            lat = -abs(lat_val) if lat_hemi == "S" else abs(lat_val)
+            lon = -abs(lon_val) if lon_hemi == "W" else abs(lon_val)
+
+            if validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": round(lat, 6),
+                    "longitude": round(lon, 6),
+                    "confidence": 0.80,
+                    "format": "decimal_degrees"
+                })
+        except ValueError:
+            pass
+
+    # 3. Check unlabeled pairs with prefix hemisphere: N 11.342423, E 77.728165
+    for m in UNLABELED_PAIR_PREFIX.finditer(text):
+        try:
+            lat_hemi = m.group(1).upper()
+            lat_val = float(m.group(2))
+            lon_hemi = m.group(3).upper()
+            lon_val = float(m.group(4))
+
+            lat = -abs(lat_val) if lat_hemi == "S" else abs(lat_val)
+            lon = -abs(lon_val) if lon_hemi == "W" else abs(lon_val)
+
+            if validate_coordinates(lat, lon):
+                candidates.append({
+                    "latitude": round(lat, 6),
+                    "longitude": round(lon, 6),
+                    "confidence": 0.80,
+                    "format": "decimal_degrees"
+                })
+        except ValueError:
+            pass
+
+    # 4. Check explicit Lat: / Long: labels (line-by-line or full text)
+    lats = []
+    for m in LABELED_LAT.finditer(text):
+        val = float(m.group(1))
+        hemi = m.group(2)
+        if hemi:
+            val = -abs(val) if hemi.upper() == "S" else abs(val)
+        lats.append((round(val, 6), m.start()))
+
+    for m in LABELED_LAT_PREFIX.finditer(text):
+        hemi = m.group(1)
+        val = float(m.group(2))
+        val = -abs(val) if hemi.upper() == "S" else abs(val)
+        lats.append((round(val, 6), m.start()))
+
+    lons = []
+    for m in LABELED_LON.finditer(text):
+        val = float(m.group(1))
+        hemi = m.group(2)
+        if hemi:
+            val = -abs(val) if hemi.upper() == "W" else abs(val)
+        lons.append((round(val, 6), m.start()))
+
+    for m in LABELED_LON_PREFIX.finditer(text):
+        hemi = m.group(1)
+        val = float(m.group(2))
+        val = -abs(val) if hemi.upper() == "W" else abs(val)
+        lons.append((round(val, 6), m.start()))
+
+    if len(lats) == 1 and len(lons) == 1:
+        if validate_coordinates(lats[0][0], lons[0][0]):
+            candidates.append({
+                "latitude": lats[0][0],
+                "longitude": lons[0][0],
+                "confidence": 0.90,
+                "format": "decimal_degrees"
+            })
+    elif len(lats) > 1 or len(lons) > 1:
+        for lat_val, lat_pos in lats:
+            best_lon = None
+            min_dist = 1000
+            for lon_val, lon_pos in lons:
+                dist = abs(lat_pos - lon_pos)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_lon = lon_val
+            if best_lon is not None and min_dist < 120:
+                if validate_coordinates(lat_val, best_lon):
+                    candidates.append({
+                        "latitude": lat_val,
+                        "longitude": best_lon,
+                        "confidence": 0.90,
+                        "format": "decimal_degrees"
+                    })
+
+    return candidates
+
+
+def parse_coordinate_text(raw_text: str) -> Dict[str, Any]:
+    """
+    Main parser: searches raw OCR text for DMS and decimal degree coordinates.
+    Conservative parsing: requires explicit labels, hemispheres, or coordinate structure.
+    Rejects dates, timestamps, phone numbers, speeds, malformed pairs, and conflicting candidate pairs.
+    Ambiguity is evaluated using physical Haversine distance (100-meter threshold) rather than
+    fixed angular difference, ensuring consistency across all latitudes.
+    """
+    if not raw_text or not raw_text.strip():
+        return {
+            "found": False,
+            "latitude": None,
+            "longitude": None,
+            "confidence": None,
+            "format": None,
+            "error": "No text provided for OCR parsing"
+        }
+
+    cleaned_text = raw_text[:2000]
+
+    dms_candidates = parse_dms_candidates(cleaned_text)
+    dec_candidates = parse_decimal_candidates(cleaned_text)
+
+    all_candidates = dms_candidates + dec_candidates
+
+    if not all_candidates:
+        return {
+            "found": False,
+            "latitude": None,
+            "longitude": None,
+            "confidence": None,
+            "format": None,
+            "error": "No GPS coordinates detected in image text"
+        }
+
+    # Deduplicate candidates within 10 meters using Haversine distance
+    unique_candidates = []
+    for cand in all_candidates:
+        dup = False
+        for u in unique_candidates:
+            if haversine_distance(cand["latitude"], cand["longitude"], u["latitude"], u["longitude"]) <= 10.0:
+                dup = True
+                if cand["confidence"] > u["confidence"]:
+                    u["confidence"] = cand["confidence"]
+                    u["format"] = cand["format"]
+                break
+        if not dup:
+            unique_candidates.append(cand)
+
+    if len(unique_candidates) == 1:
+        top = unique_candidates[0]
+        return {
+            "found": True,
+            "latitude": top["latitude"],
+            "longitude": top["longitude"],
+            "confidence": top["confidence"],
+            "format": top["format"],
+            "error": None
+        }
+
+    # Multiple distinct candidates: check for material physical conflict (> 100 meters)
+    first = unique_candidates[0]
+    for other in unique_candidates[1:]:
+        dist_m = haversine_distance(first["latitude"], first["longitude"], other["latitude"], other["longitude"])
+        if dist_m > 100.0:
+            return {
+                "found": False,
+                "latitude": None,
+                "longitude": None,
+                "confidence": None,
+                "format": None,
+                "error": "Ambiguous coordinates: multiple conflicting coordinate candidates detected"
+            }
+
+    unique_candidates.sort(key=lambda x: x["confidence"], reverse=True)
+    chosen = unique_candidates[0]
+    return {
+        "found": True,
+        "latitude": chosen["latitude"],
+        "longitude": chosen["longitude"],
+        "confidence": chosen["confidence"],
+        "format": chosen["format"],
+        "error": None
+    }
+
+
+def is_tesseract_available() -> Tuple[bool, Optional[str]]:
+    """Checks if Tesseract OCR executable is available on host system."""
+    try:
+        import pytesseract
+        ver = pytesseract.get_tesseract_version()
+        return True, str(ver)
+    except Exception as e:
+        return False, str(e)
+
+
+def extract_text_from_image(image: Image.Image, timeout: float = OCR_TIMEOUT_SECONDS) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Safely executes Tesseract OCR on a validated PIL Image.
+    Returns tuple: (success: bool, raw_text: Optional[str], error_message: Optional[str])
+    """
+    if image is None:
+        return False, None, "Invalid or missing image"
+
+    tess_available, tess_err = is_tesseract_available()
+    if not tess_available:
+        logger.warning(f"Tesseract executable not available on host: {tess_err}")
+        return False, None, "Tesseract OCR executable not installed on host"
+
+    try:
+        import pytesseract
+        ocr_img = image.convert("RGB") if image.mode not in ("RGB", "L") else image
+        text = pytesseract.image_to_string(ocr_img, timeout=timeout)
+        return True, text, None
+    except pytesseract.TesseractNotFoundError:
+        return False, None, "Tesseract OCR executable not installed on host"
+    except (subprocess.TimeoutExpired, pytesseract.TesseractError) as e:
+        logger.warning(f"Tesseract OCR execution error/timeout: {e}")
+        return False, None, "OCR execution failed or timed out"
+    except Exception as e:
+        logger.warning(f"Unexpected error during OCR execution: {e}")
+        return False, None, "OCR processing failed"
+
+
+@app.post("/extract-ocr-gps", response_model=OcrGpsResponse, dependencies=[Depends(verify_api_key)])
+def extract_ocr_gps_url(payload: OcrGpsUrlRequest):
+    """
+    Extracts GPS coordinates from visible text on an image retrieved from a URL.
+    Reuses existing load_image_from_url with full SSRF, allowlist, and size protections.
+    """
+    url = payload.image_url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="image_url must not be empty.")
+
+    image = load_image_from_url(url)
+    ocr_ok, raw_text, ocr_err = extract_text_from_image(image, timeout=OCR_TIMEOUT_SECONDS)
+    if not ocr_ok:
+        return OcrGpsResponse(
+            success=False,
+            found=False,
+            latitude=None,
+            longitude=None,
+            raw_text=None,
+            confidence=None,
+            format=None,
+            error=ocr_err
+        )
+
+    parsed = parse_coordinate_text(raw_text)
+    return OcrGpsResponse(
+        success=True,
+        found=parsed["found"],
+        latitude=parsed["latitude"],
+        longitude=parsed["longitude"],
+        raw_text=raw_text[:1000] if raw_text else "",
+        confidence=parsed["confidence"],
+        format=parsed["format"],
+        error=parsed["error"]
+    )
+
+
+@app.post("/extract-ocr-upload", response_model=OcrGpsResponse, dependencies=[Depends(verify_api_key)])
+async def extract_ocr_upload(file: UploadFile = File(...)):
+    """
+    Extracts GPS coordinates from visible text on an uploaded image file.
+    Reuses existing load_image_from_bytes with format whitelist and decompression bomb checks.
+    """
+    content = await file.read()
+    image = load_image_from_bytes(content)
+
+    ocr_ok, raw_text, ocr_err = extract_text_from_image(image, timeout=OCR_TIMEOUT_SECONDS)
+    if not ocr_ok:
+        return OcrGpsResponse(
+            success=False,
+            found=False,
+            latitude=None,
+            longitude=None,
+            raw_text=None,
+            confidence=None,
+            format=None,
+            error=ocr_err
+        )
+
+    parsed = parse_coordinate_text(raw_text)
+    return OcrGpsResponse(
+        success=True,
+        found=parsed["found"],
+        latitude=parsed["latitude"],
+        longitude=parsed["longitude"],
+        raw_text=raw_text[:1000] if raw_text else "",
+        confidence=parsed["confidence"],
+        format=parsed["format"],
+        error=parsed["error"]
     )
 
 

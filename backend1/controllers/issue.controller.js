@@ -8,7 +8,7 @@ const { resolveIssueRouting, getDepartmentForCategory } = require("../services/r
 
 exports.getAllIssues = async (req, res) => {
   try {
-    const issues = await Issue.find().select("-internalNotes -aiDiagnostic").sort({ createdAt: -1 });
+    const issues = await Issue.find().select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch issues" });
@@ -17,7 +17,7 @@ exports.getAllIssues = async (req, res) => {
 
 exports.getUserIssues = async (req, res) => {
   try {
-    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes -aiDiagnostic").sort({ createdAt: -1 });
+    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch user issues" });
@@ -57,8 +57,8 @@ exports.reportIssue = async (req, res) => {
       }
     }
 
-    // Validate that coordinates were provided
-    if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
+    // Validate that coordinates were provided as finite numbers
+    if (lat === undefined || lng === undefined || !Number.isFinite(lat) || !Number.isFinite(lng)) {
       return res.status(400).json({ message: "Valid latitude and longitude coordinates are required" });
     }
 
@@ -67,6 +67,102 @@ exports.reportIssue = async (req, res) => {
       return res.status(400).json({
         message: "Invalid coordinates range. Latitude must be between -90 and 90, and longitude between -180 and 180."
       });
+    }
+
+    // Validate geoSource (Phase F5-C)
+    const ALLOWED_GEO_SOURCES = ["exif", "ocr", "device", "manual"];
+    let geoSource = req.body.geoSource;
+
+    if (geoSource !== undefined && geoSource !== null && String(geoSource).trim() !== "") {
+      const normalizedSource = typeof geoSource === "string" ? geoSource.trim().toLowerCase() : "";
+      if (!ALLOWED_GEO_SOURCES.includes(normalizedSource)) {
+        return res.status(400).json({
+          message: `Invalid geoSource '${geoSource}'. Allowed values: ${ALLOWED_GEO_SOURCES.join(", ")}.`
+        });
+      }
+      geoSource = normalizedSource;
+    } else {
+      // Backward-compatible default for older callers omitting geoSource
+      // Only applied because caller's location was explicitly supplied and validated above
+      geoSource = "manual";
+    }
+
+    // Sanitize optional location audit metadata if supplied (never trusted for authoritative location)
+    let sanitizedLocationMetadata = undefined;
+    let rawLocationMetadata = req.body.locationMetadata;
+    if (rawLocationMetadata) {
+      if (typeof rawLocationMetadata === "string") {
+        try {
+          rawLocationMetadata = JSON.parse(rawLocationMetadata);
+        } catch {
+          rawLocationMetadata = null;
+        }
+      }
+
+      if (typeof rawLocationMetadata === "object" && rawLocationMetadata !== null) {
+        sanitizedLocationMetadata = {};
+
+        // exifCoordinates: validate canonical [lng, lat]
+        if (rawLocationMetadata.exifCoordinates) {
+          let exif = rawLocationMetadata.exifCoordinates;
+          if (Array.isArray(exif) && exif.length === 2) {
+            const eLng = Number(exif[0]);
+            const eLat = Number(exif[1]);
+            if (Number.isFinite(eLng) && Number.isFinite(eLat) && eLng >= -180 && eLng <= 180 && eLat >= -90 && eLat <= 90) {
+              sanitizedLocationMetadata.exifCoordinates = [eLng, eLat];
+            }
+          }
+        }
+
+        // ocrCoordinates: validate canonical [lng, lat]
+        if (rawLocationMetadata.ocrCoordinates) {
+          let ocr = rawLocationMetadata.ocrCoordinates;
+          if (Array.isArray(ocr) && ocr.length === 2) {
+            const oLng = Number(ocr[0]);
+            const oLat = Number(ocr[1]);
+            if (Number.isFinite(oLng) && Number.isFinite(oLat) && oLng >= -180 && oLng <= 180 && oLat >= -90 && oLat <= 90) {
+              sanitizedLocationMetadata.ocrCoordinates = [oLng, oLat];
+            }
+          }
+        }
+
+        // ocrConfidence: bounded [0, 1]
+        if (rawLocationMetadata.ocrConfidence !== undefined && rawLocationMetadata.ocrConfidence !== null) {
+          const conf = Number(rawLocationMetadata.ocrConfidence);
+          if (Number.isFinite(conf) && conf >= 0 && conf <= 1) {
+            sanitizedLocationMetadata.ocrConfidence = Math.round(conf * 1000) / 1000;
+          }
+        }
+
+        // discrepancyMeters: bounded >= 0
+        if (rawLocationMetadata.discrepancyMeters !== undefined && rawLocationMetadata.discrepancyMeters !== null) {
+          const disc = Number(rawLocationMetadata.discrepancyMeters);
+          if (Number.isFinite(disc) && disc >= 0) {
+            sanitizedLocationMetadata.discrepancyMeters = Math.round(disc * 10) / 10;
+          }
+        }
+
+        // rawOcrText: bounded, sanitized string
+        if (typeof rawLocationMetadata.rawOcrText === "string" && rawLocationMetadata.rawOcrText.trim()) {
+          sanitizedLocationMetadata.rawOcrText = rawLocationMetadata.rawOcrText
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+            .trim()
+            .slice(0, 500);
+        }
+
+        // geoReviewedAt
+        if (rawLocationMetadata.geoReviewedAt) {
+          const parsedDate = new Date(rawLocationMetadata.geoReviewedAt);
+          if (!isNaN(parsedDate.getTime())) {
+            sanitizedLocationMetadata.geoReviewedAt = parsedDate;
+          }
+        }
+
+        // If no valid fields were populated, discard empty object
+        if (Object.keys(sanitizedLocationMetadata).length === 0) {
+          sanitizedLocationMetadata = undefined;
+        }
+      }
     }
 
     const imageUrl = req.file ? req.file.path : null;
@@ -151,6 +247,8 @@ exports.reportIssue = async (req, res) => {
         type: "Point",
         coordinates: [lng, lat]
       },
+      geoSource,
+      locationMetadata: sanitizedLocationMetadata,
       embedding: duplicateAssessment.embedding,
       embeddingModel: duplicateAssessment.embeddingModel,
       duplicateStatus: duplicateAssessment.duplicateStatus,
@@ -164,13 +262,14 @@ exports.reportIssue = async (req, res) => {
 
     await newIssue.save();
 
-    // Prepare response without leaking internalNotes, embedding, embeddingModel, aiDiagnostic, or classificationConfidence
+    // Prepare response without leaking internalNotes, embedding, embeddingModel, aiDiagnostic, classificationConfidence, or locationMetadata
     const responseIssue = newIssue.toJSON();
     delete responseIssue.internalNotes;
     delete responseIssue.embedding;
     delete responseIssue.embeddingModel;
     delete responseIssue.aiDiagnostic;
     delete responseIssue.classificationConfidence;
+    delete responseIssue.locationMetadata;
 
     res.status(201).json({
       message: "Issue reported successfully",

@@ -129,6 +129,70 @@ pointSchema.virtual("lat")
     this.coordinates[1] = Number(val);
   });
 
+/**
+ * Coordinate pair validator for location metadata audit fields.
+ * Validates that non-empty coordinate pairs conform to canonical [longitude, latitude]
+ * with longitude in [-180, 180] and latitude in [-90, 90], as finite numbers.
+ */
+function validateCoordinatePair(coords) {
+  if (coords === null || coords === undefined) return true;
+  if (!Array.isArray(coords)) return false;
+  if (coords.length === 0) return true;
+  if (coords.length !== 2) return false;
+  const [lng, lat] = coords;
+  return (
+    typeof lng === "number" &&
+    Number.isFinite(lng) &&
+    typeof lat === "number" &&
+    Number.isFinite(lat) &&
+    lng >= -180 &&
+    lng <= 180 &&
+    lat >= -90 &&
+    lat <= 90
+  );
+}
+
+const locationMetadataSchema = new mongoose.Schema(
+  {
+    exifCoordinates: {
+      type: [Number],
+      validate: {
+        validator: validateCoordinatePair,
+        message: props =>
+          `Invalid exifCoordinates [${props.value}]. Must be canonical [longitude, latitude] with longitude in [-180, 180] and latitude in [-90, 90].`
+      },
+      default: undefined
+    },
+    ocrCoordinates: {
+      type: [Number],
+      validate: {
+        validator: validateCoordinatePair,
+        message: props =>
+          `Invalid ocrCoordinates [${props.value}]. Must be canonical [longitude, latitude] with longitude in [-180, 180] and latitude in [-90, 90].`
+      },
+      default: undefined
+    },
+    ocrConfidence: {
+      type: Number,
+      min: 0,
+      max: 1
+    },
+    discrepancyMeters: {
+      type: Number,
+      min: 0
+    },
+    rawOcrText: {
+      type: String,
+      maxlength: 500,
+      trim: true
+    },
+    geoReviewedAt: {
+      type: Date
+    }
+  },
+  { _id: false }
+);
+
 const issueSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -141,6 +205,16 @@ const issueSchema = new mongoose.Schema(
       type: pointSchema,
       required: true,
       set: normalizeLocation
+    },
+    geoSource: {
+      type: String,
+      enum: ["exif", "ocr", "device", "manual"],
+      default: "manual",
+      required: true
+    },
+    locationMetadata: {
+      type: locationMetadataSchema,
+      select: false // Admin/internal audit only: strictly excluded from default queries, public lists, and citizen serialization
     },
     status: {
       type: String,
