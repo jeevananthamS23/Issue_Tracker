@@ -13,12 +13,8 @@ import {
   Layers,
   Activity,
   AlertCircle,
-  HelpCircle,
   ChevronLeft,
-  ChevronRight,
-  ShieldCheck,
-  Building2,
-  FileText
+  ChevronRight
 } from "lucide-react";
 import { fetchHotspots, fetchHotspotById, runHotspotRefresh } from "../api/api";
 import "./HotspotsSection.css";

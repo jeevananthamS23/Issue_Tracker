@@ -57,7 +57,6 @@ const Dashboard = () => {
   const [locationFeedback, setLocationFeedback] = useState(null);
   const [exifExtracting, setExifExtracting] = useState(false);
   const [ocrExtracting, setOcrExtracting] = useState(false);
-  const [ocrResult, setOcrResult] = useState(null);
   const [exifCandidate, setExifCandidate] = useState(null);
   const [ocrCandidate, setOcrCandidate] = useState(null);
   const [candidateConflict, setCandidateConflict] = useState(null); // { exif, ocr, distanceMeters }
@@ -125,7 +124,6 @@ const Dashboard = () => {
 
       // Reset OCR and conflict states when image changes
       setOcrExtracting(false);
-      setOcrResult(null);
       setOcrCandidate(null);
       setCandidateConflict(null);
       if (locationSource === "ocr" || locationSource === "exif") {
@@ -206,7 +204,6 @@ const Dashboard = () => {
       if (currentReqId !== imageRequestIdRef.current) return;
 
       const data = response.data;
-      setOcrResult(data);
 
       if (data.found && typeof data.latitude === "number" && typeof data.longitude === "number") {
         const candidate = {
@@ -379,7 +376,6 @@ const Dashboard = () => {
       setLocationFeedback(null);
       setExifCandidate(null);
       setOcrCandidate(null);
-      setOcrResult(null);
       setCandidateConflict(null);
       setOcrExtracting(false);
       setExifExtracting(false);
@@ -451,7 +447,6 @@ const Dashboard = () => {
               setLocationFeedback(null);
               setExifCandidate(null);
               setOcrCandidate(null);
-              setOcrResult(null);
               setCandidateConflict(null);
               setOcrExtracting(false);
               setExifExtracting(false);
