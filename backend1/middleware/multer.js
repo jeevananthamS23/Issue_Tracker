@@ -144,6 +144,18 @@ const upload = multer({
   fileFilter,
 });
 
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5 MB maximum
+  },
+  fileFilter,
+});
+
 module.exports = upload;
+module.exports.upload = upload;
+module.exports.uploadMemory = uploadMemory;
+module.exports.fileFilter = fileFilter;
 module.exports.validateImageSignature = validateImageSignature;
 module.exports.ValidatedCloudinaryStorage = ValidatedCloudinaryStorage;
+

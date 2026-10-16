@@ -2,7 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from "react-leaflet";
 import { toast } from "react-toastify";
 import API, { getImageUrl } from "../api/api";
-import { extractExifGps, formatCoordinates } from "../utils/exifParser";
+import {
+  extractExifGps,
+  formatCoordinates,
+  calculateHaversineDistance,
+  formatDistance
+} from "../utils/exifParser";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -48,9 +53,14 @@ const Dashboard = () => {
   
   // State for creating new issue
   const [markerPosition, setMarkerPosition] = useState(null);
-  const [locationSource, setLocationSource] = useState(null); // 'exif' | 'manual' | null
+  const [locationSource, setLocationSource] = useState(null); // 'exif' | 'ocr' | 'manual' | null
   const [locationFeedback, setLocationFeedback] = useState(null);
   const [exifExtracting, setExifExtracting] = useState(false);
+  const [ocrExtracting, setOcrExtracting] = useState(false);
+  const [ocrResult, setOcrResult] = useState(null);
+  const [exifCandidate, setExifCandidate] = useState(null);
+  const [ocrCandidate, setOcrCandidate] = useState(null);
+  const [candidateConflict, setCandidateConflict] = useState(null); // { exif, ocr, distanceMeters }
   const [isReporting, setIsReporting] = useState(false);
   const [newIssue, setNewIssue] = useState({
     type: "pothole",
@@ -58,6 +68,9 @@ const Dashboard = () => {
     image: null,
   });
   
+  // Request sequence ref to discard stale async responses
+  const imageRequestIdRef = useRef(0);
+
   // State for form submission
   const [submitting, setSubmitting] = useState(false);
 
@@ -95,6 +108,7 @@ const Dashboard = () => {
   const handleLocationSelect = (coords, source = "manual") => {
     setMarkerPosition(coords);
     setLocationSource(source);
+    setCandidateConflict(null);
     setLocationFeedback({
       type: "manual",
       message: `📍 Location placed manually on map: ${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}. Click anywhere on the map to adjust.`
@@ -105,12 +119,36 @@ const Dashboard = () => {
   const handleImageChange = async (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      const currentReqId = ++imageRequestIdRef.current;
+
       setNewIssue(prev => ({ ...prev, image: file }));
 
+      // Reset OCR and conflict states when image changes
+      setOcrExtracting(false);
+      setOcrResult(null);
+      setOcrCandidate(null);
+      setCandidateConflict(null);
+      if (locationSource === "ocr" || locationSource === "exif") {
+        setLocationSource("manual");
+        setMarkerPosition(null);
+        setLocationFeedback(null);
+      }
+
+      // Perform local client-side EXIF GPS extraction
       setExifExtracting(true);
       try {
         const gpsResult = await extractExifGps(file);
+
+        // Discard result if user has already selected a newer image
+        if (currentReqId !== imageRequestIdRef.current) return;
+
         if (gpsResult.success && typeof gpsResult.latitude === "number" && typeof gpsResult.longitude === "number") {
+          const candidate = {
+            lat: gpsResult.latitude,
+            lng: gpsResult.longitude,
+            source: "exif"
+          };
+          setExifCandidate(candidate);
           setMarkerPosition([gpsResult.latitude, gpsResult.longitude]);
           setLocationSource("exif");
           setLocationFeedback({
@@ -121,21 +159,161 @@ const Dashboard = () => {
             `📍 Photo GPS detected: ${formatCoordinates(gpsResult.latitude, gpsResult.longitude)}. Placed pin on map.`
           );
         } else {
-          // Do NOT substitute default coordinates if no EXIF is found!
+          setExifCandidate(null);
           // Preserve any existing manual pin if user already placed one
           if (!markerPosition) {
             setLocationFeedback({
               type: "no_exif",
-              message: "ℹ️ No GPS coordinates found in image metadata. Please click on the map to place the issue pin manually."
+              message: "ℹ️ No GPS coordinates found in image metadata. Click 'Detect coordinates from photo' to scan for watermark text, or click the map to place a pin manually."
             });
           }
         }
       } catch (err) {
         console.warn("EXIF extraction notice:", err);
       } finally {
-        setExifExtracting(false);
+        if (currentReqId === imageRequestIdRef.current) {
+          setExifExtracting(false);
+        }
       }
     }
+  };
+
+  // Handle OCR coordinate detection via backend proxy
+  const handleDetectOcr = async () => {
+    if (!newIssue.image) {
+      toast.warn("Please select an image first.");
+      return;
+    }
+    if (ocrExtracting) return;
+
+    const currentReqId = imageRequestIdRef.current;
+    setOcrExtracting(true);
+    setCandidateConflict(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("image", newIssue.image);
+
+      const token = localStorage.getItem("token");
+      const response = await API.post("/issues/extract-ocr", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      // Discard response if a newer image was selected while OCR was processing
+      if (currentReqId !== imageRequestIdRef.current) return;
+
+      const data = response.data;
+      setOcrResult(data);
+
+      if (data.found && typeof data.latitude === "number" && typeof data.longitude === "number") {
+        const candidate = {
+          lat: data.latitude,
+          lng: data.longitude,
+          source: "ocr",
+          confidence: data.confidence,
+          format: data.format
+        };
+        setOcrCandidate(candidate);
+
+        // Check against EXIF candidate if one exists
+        if (exifCandidate) {
+          const dist = calculateHaversineDistance(
+            exifCandidate.lat,
+            exifCandidate.lng,
+            candidate.lat,
+            candidate.lng
+          );
+
+          const CONFLICT_THRESHOLD_METERS = 50.0;
+          if (dist !== null && dist > CONFLICT_THRESHOLD_METERS) {
+            // Material discrepancy: prompt citizen to choose
+            setCandidateConflict({
+              exif: exifCandidate,
+              ocr: candidate,
+              distanceMeters: dist
+            });
+            toast.warn(
+              `⚠️ Location discrepancy: Photo EXIF and Watermark OCR differ by ${formatDistance(dist)}. Please choose which coordinates to use.`
+            );
+            return;
+          } else {
+            // Close agreement (<= 50m): apply OCR coordinates with verification notice
+            setMarkerPosition([candidate.lat, candidate.lng]);
+            setLocationSource("ocr");
+            setLocationFeedback({
+              type: "ocr",
+              message: `📍 Watermark OCR coordinates detected: [${candidate.lat}, ${candidate.lng}] (${dist !== null ? formatDistance(dist) + ' from EXIF' : 'verified'}). Map pin updated.`
+            });
+            toast.success(
+              `📍 Watermark GPS detected: ${formatCoordinates(candidate.lat, candidate.lng)}.`
+            );
+          }
+        } else {
+          // No EXIF was detected: apply OCR coordinates directly
+          setMarkerPosition([candidate.lat, candidate.lng]);
+          setLocationSource("ocr");
+          setLocationFeedback({
+            type: "ocr",
+            message: `📍 Watermark OCR coordinates detected: [${candidate.lat}, ${candidate.lng}]. Map pin placed.`
+          });
+          toast.success(
+            `📍 Photo watermark GPS detected: ${formatCoordinates(candidate.lat, candidate.lng)}. Placed pin on map.`
+          );
+        }
+      } else {
+        toast.info(data.message || "No GPS coordinates detected in photo watermark text. You can place the pin manually.");
+        setLocationFeedback({
+          type: "no_ocr",
+          message: `ℹ️ ${data.message || "No GPS coordinates detected in photo text. Please click on the map to place the issue pin manually."}`
+        });
+      }
+    } catch (err) {
+      if (currentReqId !== imageRequestIdRef.current) return;
+      const errMsg = err.response?.data?.message || "Could not detect coordinates from photo. Please place the pin manually.";
+      toast.error(errMsg);
+      setLocationFeedback({
+        type: "no_ocr",
+        message: `⚠️ OCR detection notice: ${errMsg}`
+      });
+    } finally {
+      if (currentReqId === imageRequestIdRef.current) {
+        setOcrExtracting(false);
+      }
+    }
+  };
+
+  // Handle conflict choice selection
+  const handleSelectCandidate = (source) => {
+    if (!candidateConflict) return;
+
+    if (source === "exif" && candidateConflict.exif) {
+      setMarkerPosition([candidateConflict.exif.lat, candidateConflict.exif.lng]);
+      setLocationSource("exif");
+      setLocationFeedback({
+        type: "exif",
+        message: `📍 Selected Photo EXIF GPS: [${candidateConflict.exif.lat}, ${candidateConflict.exif.lng}]. Click map to adjust if needed.`
+      });
+      toast.info("Selected Photo EXIF coordinates.");
+    } else if (source === "ocr" && candidateConflict.ocr) {
+      setMarkerPosition([candidateConflict.ocr.lat, candidateConflict.ocr.lng]);
+      setLocationSource("ocr");
+      setLocationFeedback({
+        type: "ocr",
+        message: `📍 Selected Photo Watermark OCR: [${candidateConflict.ocr.lat}, ${candidateConflict.ocr.lng}]. Click map to adjust if needed.`
+      });
+      toast.info("Selected Watermark OCR coordinates.");
+    } else if (source === "manual") {
+      setLocationSource("manual");
+      setLocationFeedback({
+        type: "manual",
+        message: "📍 Manual placement chosen. Click anywhere on the map to position the pin."
+      });
+      toast.info("Please click on the map to set the location pin manually.");
+    }
+    setCandidateConflict(null);
   };
   
   // Handle form submission
@@ -155,14 +333,34 @@ const Dashboard = () => {
       formData.append("description", newIssue.description);
       formData.append("lat", markerPosition[0]);
       formData.append("lng", markerPosition[1]);
+      formData.append("geoSource", locationSource || "manual");
       
       if (newIssue.image) {
         formData.append("image", newIssue.image);
       }
+
+      // Build safe audit metadata if extraction occurred
+      const locationMetadata = {};
+      if (exifCandidate) {
+        locationMetadata.exifCoordinates = [exifCandidate.lng, exifCandidate.lat];
+      }
+      if (ocrCandidate) {
+        locationMetadata.ocrCoordinates = [ocrCandidate.lng, ocrCandidate.lat];
+        if (ocrCandidate.confidence !== undefined && ocrCandidate.confidence !== null) {
+          locationMetadata.ocrConfidence = ocrCandidate.confidence;
+        }
+      }
+      if (exifCandidate && ocrCandidate) {
+        const dist = calculateHaversineDistance(exifCandidate.lat, exifCandidate.lng, ocrCandidate.lat, ocrCandidate.lng);
+        if (dist !== null) {
+          locationMetadata.discrepancyMeters = dist;
+        }
+      }
+      if (Object.keys(locationMetadata).length > 0) {
+        formData.append("locationMetadata", JSON.stringify(locationMetadata));
+      }
       
       const token = localStorage.getItem("token");
-      console.log("Submitting issue with token:", token);
-
       await API.post("/issues", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -170,7 +368,7 @@ const Dashboard = () => {
         }
       });
       
-      // Reset form
+      // Reset form and extraction states
       setNewIssue({
         type: "pothole",
         description: "",
@@ -179,6 +377,12 @@ const Dashboard = () => {
       setMarkerPosition(null);
       setLocationSource(null);
       setLocationFeedback(null);
+      setExifCandidate(null);
+      setOcrCandidate(null);
+      setOcrResult(null);
+      setCandidateConflict(null);
+      setOcrExtracting(false);
+      setExifExtracting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setIsReporting(false);
       
@@ -245,6 +449,12 @@ const Dashboard = () => {
               setMarkerPosition(null);
               setLocationSource(null);
               setLocationFeedback(null);
+              setExifCandidate(null);
+              setOcrCandidate(null);
+              setOcrResult(null);
+              setCandidateConflict(null);
+              setOcrExtracting(false);
+              setExifExtracting(false);
               if (fileInputRef.current) fileInputRef.current.value = "";
             }}
           >
@@ -262,20 +472,28 @@ const Dashboard = () => {
                 <span>🔍 Reading photo metadata for EXIF GPS coordinates...</span>
               </div>
             )}
+            {ocrExtracting && (
+              <div className="location-banner analyzing" data-testid="ocr-analyzing">
+                <span>🔍 Scanning photo watermark text for GPS coordinates (OCR)...</span>
+              </div>
+            )}
             {locationFeedback && (
               <div className={`location-banner ${locationFeedback.type}`} data-testid="location-feedback-banner">
                 <span className="feedback-text">{locationFeedback.message}</span>
                 {locationSource === "exif" && (
                   <span className="source-tag exif-tag">Photo EXIF GPS</span>
                 )}
+                {locationSource === "ocr" && (
+                  <span className="source-tag ocr-tag">Photo Watermark OCR</span>
+                )}
                 {locationSource === "manual" && (
                   <span className="source-tag manual-tag">Manual Pin</span>
                 )}
               </div>
             )}
-            {!markerPosition && !locationFeedback && !exifExtracting && (
+            {!markerPosition && !locationFeedback && !exifExtracting && !ocrExtracting && (
               <div className="location-banner empty" data-testid="location-empty-banner">
-                <span>⚠️ No location selected yet. Click on the map to place a pin, or upload a photo containing EXIF GPS.</span>
+                <span>⚠️ No location selected yet. Click on the map to place a pin, or upload a photo containing EXIF GPS or watermark.</span>
               </div>
             )}
           </div>
@@ -300,13 +518,62 @@ const Dashboard = () => {
                     <div>
                       <strong>Incident Location</strong><br />
                       Lat: {markerPosition[0].toFixed(5)}, Lng: {markerPosition[1].toFixed(5)}<br />
-                      <em>Source: {locationSource === "exif" ? "Photo EXIF GPS" : "Manual Pin"}</em>
+                      <em>Source: {
+                        locationSource === "exif" ? "Photo EXIF GPS" :
+                        locationSource === "ocr" ? "Photo Watermark OCR" :
+                        "Manual Pin"
+                      }</em>
                     </div>
                   </Popup>
                 </Marker>
               )}
             </MapContainer>
           </div>
+
+          {candidateConflict && (
+            <div className="conflict-card" data-testid="coordinate-conflict-card">
+              <div className="conflict-header">
+                <span className="conflict-icon">⚠️</span>
+                <h4>Location Discrepancy Detected</h4>
+              </div>
+              <p className="conflict-desc">
+                Photo EXIF metadata and visible watermark text indicate different locations ({formatDistance(candidateConflict.distanceMeters)} apart). Please select the authoritative incident coordinates:
+              </p>
+              <div className="conflict-options">
+                <button
+                  type="button"
+                  className={`candidate-btn ${locationSource === "exif" ? "active" : ""}`}
+                  onClick={() => handleSelectCandidate("exif")}
+                  data-testid="choose-exif-btn"
+                >
+                  <span className="candidate-title">📷 Photo EXIF GPS</span>
+                  <span className="candidate-coords">
+                    {formatCoordinates(candidateConflict.exif.lat, candidateConflict.exif.lng)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`candidate-btn ${locationSource === "ocr" ? "active" : ""}`}
+                  onClick={() => handleSelectCandidate("ocr")}
+                  data-testid="choose-ocr-btn"
+                >
+                  <span className="candidate-title">🔍 Watermark OCR</span>
+                  <span className="candidate-coords">
+                    {formatCoordinates(candidateConflict.ocr.lat, candidateConflict.ocr.lng)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`candidate-btn manual ${locationSource === "manual" ? "active" : ""}`}
+                  onClick={() => handleSelectCandidate("manual")}
+                  data-testid="choose-manual-btn"
+                >
+                  <span className="candidate-title">📍 Pin on Map Manually</span>
+                  <span className="candidate-coords">Click anywhere on the map</span>
+                </button>
+              </div>
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} className="report-form">
             <div className="form-group">
@@ -378,31 +645,60 @@ const Dashboard = () => {
               ></textarea>
             </div>
             
-            <div className="form-group">
+            <div className="form-group image-upload-group">
               <label htmlFor="image">Upload Image (optional):</label>
-              <input
-                type="file"
-                id="image"
-                name="image"
-                accept="image/*"
-                ref={fileInputRef}
-                onChange={handleImageChange}
-              />
-              <button 
-                type="button" 
-                className="upload-btn"
-                onClick={() => fileInputRef.current.click()}
-              >
-                Choose File
-              </button>
-              <span className="file-name">
-                {newIssue.image ? newIssue.image.name : "No file chosen"}
-              </span>
-              {locationSource === "exif" && (
-                <span className="exif-badge success" data-testid="exif-success-badge">
-                  📍 EXIF GPS Coordinates Detected
+              <div className="upload-controls">
+                <input
+                  type="file"
+                  id="image"
+                  name="image"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleImageChange}
+                />
+                <button 
+                  type="button" 
+                  className="upload-btn"
+                  onClick={() => fileInputRef.current.click()}
+                >
+                  Choose File
+                </button>
+                <span className="file-name">
+                  {newIssue.image ? newIssue.image.name : "No file chosen"}
                 </span>
-              )}
+
+                {newIssue.image && (
+                  <button
+                    type="button"
+                    className="detect-ocr-btn"
+                    onClick={handleDetectOcr}
+                    disabled={ocrExtracting}
+                    data-testid="detect-ocr-btn"
+                  >
+                    {ocrExtracting ? (
+                      <>
+                        <span className="btn-spinner mini"></span>
+                        Scanning photo text...
+                      </>
+                    ) : (
+                      "🔍 Detect coordinates from photo"
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <div className="detection-badges">
+                {locationSource === "exif" && (
+                  <span className="exif-badge success" data-testid="exif-success-badge">
+                    📍 EXIF GPS Coordinates Detected
+                  </span>
+                )}
+                {locationSource === "ocr" && (
+                  <span className="exif-badge ocr-badge" data-testid="ocr-success-badge">
+                    🔍 Photo Watermark GPS Detected
+                  </span>
+                )}
+              </div>
             </div>
             
             <button

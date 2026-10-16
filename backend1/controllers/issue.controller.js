@@ -3,8 +3,9 @@ const {
   findNearbyIssues,
   retrieveSpatialDuplicateCandidates
 } = require("../services/spatial.service");
-const { assessIssueDuplicates, classifyIssueImage } = require("../services/ai.service");
+const { assessIssueDuplicates, classifyIssueImage, extractOcrGpsFromBuffer } = require("../services/ai.service");
 const { resolveIssueRouting, getDepartmentForCategory } = require("../services/routing.service");
+const { validateImageSignature } = require("../middleware/multer");
 
 exports.getAllIssues = async (req, res) => {
   try {
@@ -384,3 +385,94 @@ exports.getDuplicateCandidates = async (req, res) => {
     res.status(500).json({ error: true, message: "Failed to retrieve duplicate candidates" });
   }
 };
+
+/**
+ * Protected citizen endpoint to extract GPS coordinates from an uploaded photo buffer.
+ *
+ * Privacy & Security Controls:
+ * 1. Requires valid citizen JWT authentication.
+ * 2. Rate-limited by ocrRateLimiter.
+ * 3. Validates file presence, size (5MB), and genuine binary magic bytes (JPEG, PNG, WebP).
+ * 4. Operates strictly on in-memory buffer without creating permanent Cloudinary assets or Issues.
+ * 5. Returns structured GPS coordinates or safe failure message without leaking internal URLs or keys.
+ */
+exports.extractOcrCoordinates = async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: true, success: false, message: "No image file uploaded" });
+    }
+
+    const detectedMime = validateImageSignature(req.file.buffer);
+    if (!detectedMime) {
+      return res.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid image content. File binary signature does not match JPEG, PNG, or WebP."
+      });
+    }
+
+    const result = await extractOcrGpsFromBuffer(req.file.buffer, {
+      mimetype: req.file.mimetype || detectedMime,
+      filename: req.file.originalname || "upload.jpg",
+      timeoutMs: 2500
+    });
+
+    if (!result.success) {
+      // Safe non-blocking degradation: return 200 with found=false and error explanation
+      return res.status(200).json({
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        message: result.error || "OCR extraction is currently unavailable. Please place your pin manually."
+      });
+    }
+
+    if (!result.found) {
+      return res.status(200).json({
+        success: true,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        message: result.error || "No GPS coordinates detected in photo watermark text."
+      });
+    }
+
+    // Coordinates were detected: double check bounds on Express layer
+    const lat = Number(result.latitude);
+    const lng = Number(result.longitude);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(200).json({
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        message: "Extracted coordinates were outside valid geographic bounds."
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      found: true,
+      latitude: lat,
+      longitude: lng,
+      confidence: result.confidence,
+      format: result.format,
+      message: "GPS coordinates detected successfully from photo."
+    });
+  } catch (err) {
+    console.error("extractOcrCoordinates error:", err.message);
+    return res.status(500).json({
+      error: true,
+      message: "Internal error during OCR processing. Please place your pin manually."
+    });
+  }
+};
+

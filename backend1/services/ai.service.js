@@ -687,6 +687,207 @@ async function extractOcrGps(imageUrl, timeoutMs = 2500) {
   }
 }
 
+/**
+ * Calls FastAPI microservice endpoint POST /extract-ocr-upload with an in-memory image buffer.
+ * Avoids any unnecessary Cloudinary upload solely for OCR extraction.
+ *
+ * Implements strict security, validation, and timeout controls:
+ * 1. AbortSignal timeout bounded by timeoutMs (default 2500ms).
+ * 2. Authenticates using configured AI_SERVICE_API_KEY via X-API-Key header.
+ * 3. Does not log API keys, full URLs, or sensitive raw OCR text.
+ * 4. Validates returned latitude [-90, 90] and longitude [-180, 180] as finite numbers.
+ * 5. Returns a structured, safe result without throwing (soft failure).
+ *
+ * @param {Buffer} imageBuffer - In-memory binary image buffer.
+ * @param {object} [options]
+ * @param {string} [options.mimetype="image/jpeg"] - Image MIME type.
+ * @param {string} [options.filename="photo.jpg"] - Original or safe filename.
+ * @param {number} [options.timeoutMs=2500] - Request timeout in milliseconds.
+ * @returns {Promise<{
+ *   success: boolean,
+ *   found: boolean,
+ *   latitude: number|null,
+ *   longitude: number|null,
+ *   confidence: number|null,
+ *   format: string|null,
+ *   error: string|null
+ * }>}
+ */
+async function extractOcrGpsFromBuffer(imageBuffer, options = {}) {
+  const {
+    mimetype = "image/jpeg",
+    filename = "photo.jpg",
+    timeoutMs = 2500
+  } = options;
+
+  if (!imageBuffer || !Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+    return {
+      success: false,
+      found: false,
+      latitude: null,
+      longitude: null,
+      confidence: null,
+      format: null,
+      error: "Image buffer must be a non-empty Buffer",
+      message: "Image buffer must be a non-empty Buffer"
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers = {};
+    if (process.env.AI_SERVICE_API_KEY) {
+      headers["X-API-Key"] = process.env.AI_SERVICE_API_KEY.trim();
+    }
+
+    const formData = new FormData();
+    formData.append("file", new Blob([imageBuffer], { type: mimetype }), filename);
+
+    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/extract-ocr-upload`, {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: controller.signal
+    });
+
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: `AI service returned HTTP ${response.status}: ${errText}`,
+        message: `AI service returned HTTP ${response.status}: ${errText}`
+      };
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: "Malformed JSON response from AI service",
+        message: "Malformed JSON response from AI service"
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: "Invalid response payload from AI service",
+        message: "Invalid response payload from AI service"
+      };
+    }
+
+    // Handle OCR system failure (e.g., Tesseract not available or execution error)
+    if (data.success === false) {
+      const err = data.error || "OCR processing failed or Tesseract is unavailable";
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: err,
+        message: err
+      };
+    }
+
+    // OCR succeeded, but no GPS coordinates were found in the text
+    if (!data.found) {
+      return {
+        success: true,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: data.error || null,
+        message: data.message || "No GPS coordinates detected in photo watermark text."
+      };
+    }
+
+    // Coordinates were detected: strictly validate numbers and ranges
+    const lat = Number(data.latitude);
+    const lng = Number(data.longitude);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: `AI service returned invalid coordinate bounds [lat: ${data.latitude}, lng: ${data.longitude}]`,
+        message: `AI service returned invalid coordinate bounds [lat: ${data.latitude}, lng: ${data.longitude}]`
+      };
+    }
+
+    // Validate confidence score [0.0, 1.0]
+    let validatedConfidence = null;
+    if (typeof data.confidence === "number" && Number.isFinite(data.confidence)) {
+      if (data.confidence >= 0.0 && data.confidence <= 1.0) {
+        validatedConfidence = Math.round(data.confidence * 1000) / 1000;
+      }
+    }
+
+    return {
+      success: true,
+      found: true,
+      latitude: Math.round(lat * 1000000) / 1000000,
+      longitude: Math.round(lng * 1000000) / 1000000,
+      confidence: validatedConfidence,
+      format: typeof data.format === "string" ? data.format : null,
+      error: null,
+      message: "GPS coordinates detected successfully from photo."
+    };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      return {
+        success: false,
+        found: false,
+        latitude: null,
+        longitude: null,
+        confidence: null,
+        format: null,
+        error: `AI service OCR request timed out after ${timeoutMs}ms`,
+        message: `AI service OCR request timed out after ${timeoutMs}ms`
+      };
+    }
+    return {
+      success: false,
+      found: false,
+      latitude: null,
+      longitude: null,
+      confidence: null,
+      format: null,
+      error: `Failed to connect to AI OCR service: ${err.message}`,
+      message: `Failed to connect to AI OCR service: ${err.message}`
+    };
+  }
+}
+
 module.exports = {
   cosineSimilarity,
   validateEmbeddingVector,
@@ -696,6 +897,7 @@ module.exports = {
   assessIssueDuplicates,
   classifyIssueImage,
   extractOcrGps,
+  extractOcrGpsFromBuffer,
   DEFAULT_SIMILARITY_THRESHOLD,
   EXPECTED_EMBEDDING_DIM
 };

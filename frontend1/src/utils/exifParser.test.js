@@ -1,4 +1,11 @@
-import { extractExifGps, parseExifFromBuffer, formatCoordinates } from "./exifParser";
+import {
+  extractExifGps,
+  parseExifFromBuffer,
+  formatCoordinates,
+  calculateHaversineDistance,
+  formatDistance
+} from "./exifParser";
+
 
 /**
  * Helper to construct a synthetic JPEG buffer with custom TIFF/EXIF GPS data.
@@ -208,4 +215,30 @@ describe("CivicVision AI - Pure Client-side EXIF GPS Parser", () => {
     expect(formatCoordinates(-33.85, -151.2)).toBe("33.8500° S, 151.2000° W");
     expect(formatCoordinates(null, null)).toBe("Unavailable");
   });
+
+  test("10. calculateHaversineDistance accurately computes great-circle distance in meters", () => {
+    // Two points roughly 111 meters apart (0.001 degree latitude delta)
+    const dist = calculateHaversineDistance(11.3412, 77.7214, 11.3422, 77.7214);
+    expect(dist).toBeGreaterThan(110);
+    expect(dist).toBeLessThan(112);
+
+    // Identical coordinates: 0 meters
+    expect(calculateHaversineDistance(11.3412, 77.7214, 11.3412, 77.7214)).toBe(0);
+  });
+
+  test("11. calculateHaversineDistance returns null on invalid or non-numeric inputs", () => {
+    expect(calculateHaversineDistance(null, 77.0, 11.0, 77.0)).toBeNull();
+    expect(calculateHaversineDistance(11.0, NaN, 11.0, 77.0)).toBeNull();
+    expect(calculateHaversineDistance("11", "77", 12, 78)).toBeNull();
+  });
+
+  test("12. formatDistance formats meters and kilometers properly", () => {
+    expect(formatDistance(45.2)).toBe("45 m");
+    expect(formatDistance(999)).toBe("999 m");
+    expect(formatDistance(1250)).toBe("1.25 km");
+    expect(formatDistance(14200)).toBe("14.20 km");
+    expect(formatDistance(null)).toBe("");
+    expect(formatDistance(NaN)).toBe("");
+  });
 });
+
