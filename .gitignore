@@ -22,3 +22,32 @@ yarn-error.log*
 *.pdf
 *.docx
 Project.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Machine Learning & Computer Vision Datasets
+data/
+datasets/
+raw_data/
+annotations/
+*.manifest.json
+manifest_out/
+
+# Model Checkpoints & Weights
+*.pth
+*.pt
+*.bin
+*.onnx
+*.safetensors
+checkpoints/
+models/
