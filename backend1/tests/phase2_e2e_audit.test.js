@@ -107,7 +107,9 @@ Issue.findById = async (id) => {
   if (!issue) return null;
   return {
     ...issue,
+    statusHistory: issue.statusHistory || [],
     save: async function () {
+      this.updatedAt = new Date().toISOString();
       db.issues.set(String(this._id), { ...this });
       return this;
     },
@@ -546,15 +548,16 @@ describe("CivicVision AI - Phase 2.1 End-to-End Integration Audit", { concurrenc
       );
     });
 
-    it("2.6 Status history audit: confirms Issue schema tracks timestamps but lacks status history array", async () => {
+    it("2.6 Status history audit: confirms Issue schema tracks timestamps and status history array", async () => {
       const issue = db.issues.get(testIssueId);
       assert.ok(issue.createdAt, "Issue has createdAt timestamp");
       assert.ok(issue.updatedAt, "Issue has updatedAt timestamp");
-      assert.strictEqual(
-        issue.statusHistory,
-        undefined,
-        "Confirmed: Issue schema does not implement a statusHistory subdocument array"
-      );
+      assert.ok(Array.isArray(issue.statusHistory), "Issue should have statusHistory array");
+      assert.strictEqual(issue.statusHistory.length, 1);
+      assert.strictEqual(issue.statusHistory[0].from, "reported");
+      assert.strictEqual(issue.statusHistory[0].to, "in-progress");
+      assert.strictEqual(String(issue.statusHistory[0].changedBy), "adm_audit_001");
+      assert.ok(issue.statusHistory[0].changedAt, "Status transition has changedAt timestamp");
     });
 
     it("2.7 Deletes disposable test issue via DELETE /api/admin-dashboard/issues/:id", async () => {

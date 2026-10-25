@@ -33,6 +33,7 @@ jest.mock("./api/api", () => {
     markNotificationRead: (id) => mockApi.patch(`/admin-dashboard/notifications/${id}/read`),
     markAllNotificationsRead: () => mockApi.patch("/admin-dashboard/notifications/read-all"),
     retryNotificationEmail: (id) => mockApi.post(`/admin-dashboard/notifications/${id}/retry-email`),
+    fetchAnalytics: (params) => mockApi.get("/admin-dashboard/analytics", { params }),
   };
 });
 
@@ -1650,6 +1651,119 @@ describe("Admin Frontend Application Tests", () => {
 
     expect(await screen.findByTestId("nc-empty-state")).toBeInTheDocument();
     expect(screen.getByText("No Notifications Found")).toBeInTheDocument();
+  });
+
+  test("35. Performance Analytics tab renders and displays database-backed KPI metrics", async () => {
+    const mockAdmin = {
+      _id: "adm_test_analytics_01",
+      email: "analytics.admin@civicvision.gov",
+      fullName: "Analytics Director",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    // Profile restoration
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    // Issues list
+    API.get.mockResolvedValueOnce({ data: [] });
+    // Analytics
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        data: {
+          summary: {
+            totalIssues: 42,
+            openIssues: 18,
+            resolvedIssues: 24,
+            reportedIssues: 8,
+            inProgressIssues: 10,
+            needsReviewIssues: 3,
+            resolutionRate: 0.5714,
+            resolutionRateFormatted: "57.1%",
+          },
+          mttr: {
+            avgHours: 14.5,
+            sampleSize: 24,
+            formatted: "14.5 hrs",
+          },
+          breakdowns: {
+            byStatus: { reported: 8, "in-progress": 10, resolved: 24 },
+            byCategory: [{ category: "pothole", count: 25, percentage: "59.5%" }],
+            byDepartment: [{ department: "Roads & Infrastructure", count: 30, percentage: "71.4%" }],
+          },
+          hotspots: {
+            total: 2,
+            active: 1,
+            totalDistinctDefects: 6,
+            avgSeverity: 7.2,
+            byCategory: [],
+          },
+          trend: {
+            days: 30,
+            data: [{ date: "2026-10-25", created: 3, resolved: 2 }],
+          },
+        },
+      },
+    });
+
+    render(<App />);
+
+    const analyticsTab = await screen.findByTestId("tab-analytics");
+    expect(analyticsTab).toBeInTheDocument();
+
+    fireEvent.click(analyticsTab);
+
+    // Verify analytics section renders with metrics
+    expect(await screen.findByTestId("analytics-section")).toBeInTheDocument();
+    expect(screen.getByText("Municipal Performance Analytics")).toBeInTheDocument();
+    expect(screen.getByTestId("kpi-total")).toHaveTextContent("42");
+    expect(screen.getByTestId("kpi-open")).toHaveTextContent("18");
+    expect(screen.getByTestId("kpi-resolved")).toHaveTextContent("24");
+    expect(screen.getByTestId("kpi-rate")).toHaveTextContent("57.1%");
+    expect(screen.getByTestId("kpi-mttr")).toHaveTextContent("14.5 hrs");
+  });
+
+  test("36. Performance Analytics displays empty state when collection has 0 issues", async () => {
+    const mockAdmin = {
+      _id: "adm_test_analytics_02",
+      email: "analytics.admin@civicvision.gov",
+      fullName: "Analytics Director",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+    API.get.mockResolvedValueOnce({ data: [] });
+    API.get.mockResolvedValueOnce({
+      data: {
+        error: false,
+        data: {
+          summary: {
+            totalIssues: 0,
+            openIssues: 0,
+            resolvedIssues: 0,
+            resolutionRate: 0,
+            resolutionRateFormatted: "0.0%",
+          },
+          mttr: { avgHours: null, sampleSize: 0, formatted: "N/A" },
+          breakdowns: { byStatus: {}, byCategory: [], byDepartment: [] },
+          hotspots: { total: 0, active: 0, totalDistinctDefects: 0 },
+          trend: { days: 30, data: [] },
+        },
+      },
+    });
+
+    render(<App />);
+
+    const analyticsTab = await screen.findByTestId("tab-analytics");
+    fireEvent.click(analyticsTab);
+
+    expect(await screen.findByTestId("analytics-empty")).toBeInTheDocument();
+    expect(screen.getByText("No Civic Defect Data Available")).toBeInTheDocument();
   });
 });
 

@@ -193,6 +193,67 @@ const locationMetadataSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Status History Audit Subdocument Schema (Sprint Block 1)
+ * Tracks full audit trail of issue lifecycle changes:
+ * from -> to, authenticated admin, timestamp, and transition reason/notes.
+ */
+const statusHistorySchema = new mongoose.Schema(
+  {
+    from: {
+      type: String,
+      enum: ["reported", "in-progress", "resolved"],
+      required: true
+    },
+    to: {
+      type: String,
+      enum: ["reported", "in-progress", "resolved"],
+      required: true
+    },
+    changedBy: {
+      type: mongoose.Schema.Types.Mixed,
+      ref: "Admin",
+      required: true
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now,
+      required: true
+    },
+    reason: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
+      default: null
+    }
+  },
+  {
+    _id: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
+);
+
+// Virtual aliases for backward/forward compatibility in audit queries and tests
+statusHistorySchema.virtual("previousStatus").get(function () {
+  return this.from;
+});
+statusHistorySchema.virtual("newStatus").get(function () {
+  return this.to;
+});
+statusHistorySchema.virtual("adminId").get(function () {
+  return this.changedBy;
+});
+statusHistorySchema.virtual("timestamp").get(function () {
+  return this.changedAt;
+});
+
 const issueSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -220,6 +281,14 @@ const issueSchema = new mongoose.Schema(
       type: String,
       enum: ["reported", "in-progress", "resolved"],
       default: "reported"
+    },
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: []
+    },
+    resolvedAt: {
+      type: Date,
+      default: null
     },
     votes: { type: Number, default: 0 },
     // AI-derived fields (Research Paper Table 1: CLIP embedding & duplicate suppression)

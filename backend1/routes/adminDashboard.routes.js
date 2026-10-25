@@ -14,9 +14,13 @@ const {
   getUnreadNotificationCount,
   markNotificationAsRead,
   markAllNotificationsAsRead,
-  retryNotificationEmail
+  retryNotificationEmail,
+  getAnalytics
 } = require("../controllers/adminDashboard.controller");
 const verifyAdmin = require("../middleware/authenticateTokenAdmin");
+
+// Protected Analytics Endpoint (Sprint Block 2)
+router.get("/analytics", verifyAdmin, getAnalytics);
 
 router.get("/issues", verifyAdmin, getAllIssues);
 router.get("/issues/filter", verifyAdmin, getFilteredIssues);

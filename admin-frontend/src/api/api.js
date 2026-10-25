@@ -79,5 +79,7 @@ export const markNotificationRead = (id) => API.patch(`/admin-dashboard/notifica
 export const markAllNotificationsRead = () => API.patch("/admin-dashboard/notifications/read-all");
 export const retryNotificationEmail = (id) => API.post(`/admin-dashboard/notifications/${id}/retry-email`);
 
+export const fetchAnalytics = (params) => API.get("/admin-dashboard/analytics", { params });
+
 export default API;
 

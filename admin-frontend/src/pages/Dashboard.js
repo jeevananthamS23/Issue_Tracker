@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAdminAuth } from "../context/AdminAuthContext";
-import API, { getImageUrl, fetchUnreadNotificationCount } from "../api/api";
+import API, { getImageUrl, fetchUnreadNotificationCount, fetchAnalytics } from "../api/api";
 import {
   ShieldCheck,
   LogOut,
@@ -24,10 +24,13 @@ import {
   Layers,
   HelpCircle,
   Flame,
-  Bell
+  Bell,
+  BarChart3,
+  TrendingUp
 } from "lucide-react";
 import HotspotsSection from "../components/HotspotsSection";
 import NotificationCenter from "../components/NotificationCenter";
+import AnalyticsSection from "../components/AnalyticsSection";
 import "./Dashboard.css";
 
 const DEPARTMENTS = [
@@ -217,14 +220,40 @@ const Dashboard = () => {
     }
   }, []);
 
+  // Performance Analytics State (Sprint Block 2)
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState(null);
+  const [analyticsDays, setAnalyticsDays] = useState(30);
+
+  const fetchAnalyticsData = useCallback(async (days = 30) => {
+    try {
+      setAnalyticsLoading(true);
+      setAnalyticsError(null);
+      const res = await fetchAnalytics({ days });
+      if (res && res.data && res.data.data) {
+        setAnalytics(res.data.data);
+      }
+    } catch (err) {
+      // Soft failure: do not disrupt primary issue management if analytics fails
+      setAnalyticsError(
+        err.response?.data?.message || "Failed to load database analytics."
+      );
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchIssues();
-  }, [fetchIssues]);
+    fetchAnalyticsData(analyticsDays);
+  }, [fetchIssues, fetchAnalyticsData, analyticsDays]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchIssues();
     fetchUnreadCount();
+    fetchAnalyticsData(analyticsDays);
   };
 
 
@@ -405,13 +434,13 @@ const Dashboard = () => {
     return true;
   });
 
-  // Metric counts
-  const totalCount = issues.length;
-  const needsReviewCount = issues.filter((i) => i.needsReview).length;
+  // Metric counts (derived from database-backed analytics aggregation when available)
+  const totalCount = analytics?.summary?.totalIssues ?? issues.length;
+  const needsReviewCount = analytics?.summary?.needsReviewIssues ?? issues.filter((i) => i.needsReview).length;
   const flaggedDupCount = issues.filter((i) => i.duplicateStatus === "flagged_duplicate").length;
-  const reportedCount = issues.filter((i) => i.status === "reported").length;
-  const inProgressCount = issues.filter((i) => i.status === "in-progress").length;
-  const resolvedCount = issues.filter((i) => i.status === "resolved").length;
+  const reportedCount = analytics?.summary?.reportedIssues ?? issues.filter((i) => i.status === "reported").length;
+  const inProgressCount = analytics?.summary?.inProgressIssues ?? issues.filter((i) => i.status === "in-progress").length;
+  const resolvedCount = analytics?.summary?.resolvedIssues ?? issues.filter((i) => i.status === "resolved").length;
 
   return (
     <div className="admin-portal-layout">
@@ -468,8 +497,8 @@ const Dashboard = () => {
 
       {/* Main Content Area */}
       <main className="admin-main">
-        {/* Metric Cards */}
-        {activeTab !== "hotspots" && activeTab !== "notifications" && (
+        {/* Metric Cards (Database-backed calculations) */}
+        {activeTab !== "hotspots" && activeTab !== "notifications" && activeTab !== "analytics" && (
           <section className="metrics-grid">
             <div
               className={`metric-card total ${activeTab === "all" ? "active-card" : ""}`}
@@ -550,6 +579,40 @@ const Dashboard = () => {
               <div className="metric-value">{resolvedCount}</div>
               <span className="metric-hint">Successfully completed</span>
             </div>
+
+            <div
+              className="metric-card rate"
+              onClick={() => setActiveTab("analytics")}
+              role="button"
+              tabIndex={0}
+              title="View performance analytics and resolution rate"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Resolution Rate</span>
+                <TrendingUp size={20} className="metric-icon icon-accent" />
+              </div>
+              <div className="metric-value">{analytics?.summary?.resolutionRateFormatted || "0.0%"}</div>
+              <span className="metric-hint">Closed ÷ total issues</span>
+            </div>
+
+            <div
+              className="metric-card mttr"
+              onClick={() => setActiveTab("analytics")}
+              role="button"
+              tabIndex={0}
+              title="View Mean Time to Resolution analytics"
+            >
+              <div className="metric-header">
+                <span className="metric-label">Avg MTTR</span>
+                <Clock size={20} className="metric-icon icon-clock" />
+              </div>
+              <div className="metric-value">{analytics?.mttr?.formatted || "Pending"}</div>
+              <span className="metric-hint">
+                {analytics?.mttr?.sampleSize
+                  ? `${analytics.mttr.sampleSize} verified records`
+                  : "Mean resolution time"}
+              </span>
+            </div>
           </section>
         )}
 
@@ -609,6 +672,13 @@ const Dashboard = () => {
               </span>
             )}
           </button>
+          <button
+            className={`tab-btn tab-analytics ${activeTab === "analytics" ? "active" : ""}`}
+            data-testid="tab-analytics"
+            onClick={() => setActiveTab("analytics")}
+          >
+            <BarChart3 size={15} /> Performance Analytics
+          </button>
         </nav>
 
         {activeTab === "hotspots" ? (
@@ -620,6 +690,18 @@ const Dashboard = () => {
           <NotificationCenter
             onNavigateToHotspot={handleNavigateToHotspot}
             onUnreadCountChange={setUnreadNotificationsCount}
+          />
+        ) : activeTab === "analytics" ? (
+          <AnalyticsSection
+            analytics={analytics}
+            loading={analyticsLoading}
+            error={analyticsError}
+            selectedDays={analyticsDays}
+            onDaysChange={(d) => {
+              setAnalyticsDays(d);
+              fetchAnalyticsData(d);
+            }}
+            onRefresh={() => fetchAnalyticsData(analyticsDays)}
           />
         ) : (
 

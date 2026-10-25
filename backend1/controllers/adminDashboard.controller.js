@@ -5,6 +5,7 @@ const AdminNotification = require("../models/AdminNotification");
 const { CANONICAL_CATEGORIES, normalizeCategory } = require("../services/routing.service");
 const { executeHotspotJob } = require("../services/hotspotJob.service");
 const { retryNotificationEmail } = require("../services/adminNotification.service");
+const { getDashboardAnalytics } = require("../services/analytics.service");
 
 const SAFE_DUPLICATE_OF_FIELDS = "type description imageUrl status location createdAt";
 const SAFE_USER_FIELDS = "fullName email";
@@ -65,6 +66,7 @@ exports.getAllIssues = async (req, res) => {
       .populate("userId", SAFE_USER_FIELDS)
       .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
       .populate("reviewedBy", SAFE_ADMIN_FIELDS)
+      .populate("statusHistory.changedBy", SAFE_ADMIN_FIELDS)
       .sort({ createdAt: -1 });
 
     res.status(200).json(issues);
@@ -89,6 +91,7 @@ exports.getFilteredIssues = async (req, res) => {
       .populate("userId", SAFE_USER_FIELDS)
       .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
       .populate("reviewedBy", SAFE_ADMIN_FIELDS)
+      .populate("statusHistory.changedBy", SAFE_ADMIN_FIELDS)
       .sort({ createdAt: -1 });
 
     res.status(200).json(issues);
@@ -108,85 +111,156 @@ exports.getFilteredIssues = async (req, res) => {
 
 exports.updateIssueStatus = async (req, res) => {
   const { id } = req.params;
-  const { status, department, internalNotes, reviewResolution, action, reviewNotes } = req.body;
+  const {
+    status: rawStatus,
+    department,
+    internalNotes,
+    reviewResolution,
+    action: rawAction,
+    reviewNotes,
+    reason,
+    reopenReason,
+    notes
+  } = req.body;
+
+  const status = typeof rawStatus === "string" ? rawStatus.trim() : rawStatus;
+  const action = typeof rawAction === "string" ? rawAction.trim().toLowerCase() : rawAction;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ error: true, message: "Invalid issue ID format" });
   }
 
-  const updateFields = {};
-
-  if (status !== undefined) {
-    if (!["reported", "in-progress", "resolved"].includes(status)) {
-      return res.status(400).json({ error: true, message: "Invalid status value. Must be reported, in-progress, or resolved." });
-    }
-    updateFields.status = status;
-  }
-
-  if (department !== undefined) {
-    updateFields.department = department;
-  }
-
-  if (internalNotes !== undefined) {
-    updateFields.internalNotes = internalNotes;
-  }
-
-  // Handle review resolution if submitted via updateIssueStatus
-  if (action || reviewResolution) {
-    const rawAction = action || reviewResolution;
-    const adminId = req.admin ? req.admin.adminId : null;
-    if (!adminId) {
-      return res.status(403).json({ error: true, message: "Forbidden: Administrator identification missing" });
-    }
-
-    if (rawAction === "confirm_duplicate" || rawAction === "confirmed_duplicate") {
-      updateFields.reviewResolution = "confirmed_duplicate";
-      updateFields.needsReview = false;
-      updateFields.reviewedBy = adminId;
-      updateFields.reviewedAt = new Date();
-    } else if (rawAction === "dismiss_duplicate" || rawAction === "mark_unique" || rawAction === "dismissed_unique") {
-      updateFields.reviewResolution = "dismissed_unique";
-      updateFields.needsReview = false;
-      updateFields.reviewedBy = adminId;
-      updateFields.reviewedAt = new Date();
-    } else {
-      return res.status(400).json({
-        error: true,
-        message: `Invalid review action '${rawAction}'. Allowed actions: 'confirm_duplicate' or 'dismiss_duplicate'.`
-      });
-    }
-
-    if (reviewNotes !== undefined && typeof reviewNotes === "string") {
-      updateFields.reviewNotes = reviewNotes.trim();
-    }
+  const adminId = req.admin ? req.admin.adminId : null;
+  if (!adminId) {
+    return res.status(403).json({ error: true, message: "Forbidden: Administrator identification missing" });
   }
 
   try {
     const issue = await Issue.findById(id);
     if (!issue) return res.status(404).json({ error: true, message: "Issue not found" });
 
-    if (status !== undefined) {
-      if (!["reported", "in-progress", "resolved"].includes(status)) {
-        return res.status(400).json({ error: true, message: "Invalid status value. Must be reported, in-progress, or resolved." });
+    const prevStatus = issue.status;
+    const isExplicitReopen = action === "reopen" || action === "reopened";
+    const changeReason = (reason || reopenReason || reviewNotes || notes || internalNotes || "").trim();
+    const changeNotes = (notes || internalNotes || "").trim();
+
+    let targetStatus = undefined;
+
+    // 1. Determine target status
+    if (isExplicitReopen) {
+      if (prevStatus !== "resolved") {
+        return res.status(400).json({
+          error: true,
+          message: `Cannot reopen an issue with status '${prevStatus}'. Only 'resolved' issues can be reopened.`
+        });
       }
-      issue.status = status;
+      if (!changeReason || changeReason.length < 3) {
+        return res.status(400).json({
+          error: true,
+          message: "Reopening a resolved issue requires an explicit reason (minimum 3 characters)."
+        });
+      }
+      targetStatus = status || "in-progress";
+      if (targetStatus === "resolved") {
+        return res.status(400).json({
+          error: true,
+          message: "Cannot reopen an issue to 'resolved' status."
+        });
+      }
+      if (!["reported", "in-progress"].includes(targetStatus)) {
+        return res.status(400).json({
+          error: true,
+          message: `Invalid reopen target status '${targetStatus}'. Must be 'in-progress' or 'reported'.`
+        });
+      }
+    } else if (status !== undefined) {
+      if (!["reported", "in-progress", "resolved"].includes(status)) {
+        return res.status(400).json({
+          error: true,
+          message: "Invalid status value. Must be reported, in-progress, or resolved."
+        });
+      }
+      targetStatus = status;
     }
 
+    // 2. Validate and execute state transition if a status change is requested
+    let statusChanged = false;
+    if (targetStatus !== undefined && targetStatus !== prevStatus) {
+      // Validate FSM transitions: reported -> in-progress -> resolved, and explicit reopen from resolved
+      if (prevStatus === "reported") {
+        if (targetStatus === "resolved") {
+          return res.status(400).json({
+            error: true,
+            message: "Invalid status transition from 'reported' to 'resolved'. Issues must transition to 'in-progress' before being resolved."
+          });
+        }
+      } else if (prevStatus === "in-progress") {
+        if (targetStatus === "reported") {
+          return res.status(400).json({
+            error: true,
+            message: "Invalid status transition from 'in-progress' to 'reported'."
+          });
+        }
+      } else if (prevStatus === "resolved") {
+        // Must be explicit reopen with reason
+        if (!changeReason || changeReason.length < 3) {
+          return res.status(400).json({
+            error: true,
+            message: "Reopening a resolved issue requires an explicit reopen action or reason (minimum 3 characters)."
+          });
+        }
+      }
+
+      // Concurrency guard: verify current document status in database before mutation
+      let freshQuery = Issue.findById(issue._id);
+      if (freshQuery && typeof freshQuery.select === "function") {
+        freshQuery = freshQuery.select("status");
+      }
+      const freshCheck = await freshQuery;
+      if (!freshCheck || freshCheck.status !== prevStatus) {
+        return res.status(409).json({
+          error: true,
+          message: "Concurrent modification detected. The issue status was changed by another request. Please refresh."
+        });
+      }
+
+      // Record in statusHistory
+      if (!Array.isArray(issue.statusHistory)) {
+        issue.statusHistory = [];
+      }
+      issue.statusHistory.push({
+        from: prevStatus,
+        to: targetStatus,
+        changedBy: adminId,
+        changedAt: new Date(),
+        reason: changeReason || null,
+        notes: changeNotes || null
+      });
+
+      issue.status = targetStatus;
+      statusChanged = true;
+
+      // Handle resolvedAt timestamp
+      if (targetStatus === "resolved") {
+        issue.resolvedAt = new Date();
+      } else if (prevStatus === "resolved") {
+        issue.resolvedAt = null;
+      }
+    }
+
+    // 3. Update department if provided
     if (department !== undefined) {
       issue.department = department;
     }
 
+    // 4. Update internalNotes if provided
     if (internalNotes !== undefined) {
       issue.internalNotes = internalNotes;
     }
 
-    // Handle review resolution if submitted via updateIssueStatus
-    if (action || reviewResolution) {
+    // 5. Handle review resolution if submitted via updateIssueStatus (non-reopen actions)
+    if ((action && !isExplicitReopen) || reviewResolution) {
       const rawAction = action || reviewResolution;
-      const adminId = req.admin ? req.admin.adminId : null;
-      if (!adminId) {
-        return res.status(403).json({ error: true, message: "Forbidden: Administrator identification missing" });
-      }
 
       if (rawAction === "confirm_duplicate" || rawAction === "confirmed_duplicate") {
         issue.reviewResolution = "confirmed_duplicate";
@@ -210,7 +284,7 @@ exports.updateIssueStatus = async (req, res) => {
       }
     }
 
-    // Handle classification review resolution if submitted via updateIssueStatus
+    // 6. Handle classification review resolution if submitted via updateIssueStatus
     if (req.body.classificationReviewResolution || req.body.resolveClassification) {
       const classRes = req.body.classificationReviewResolution || "confirmed_category";
       if (!["none", "confirmed_category", "reclassified"].includes(classRes)) {
@@ -223,17 +297,23 @@ exports.updateIssueStatus = async (req, res) => {
       issue.needsClassificationReview = false;
     }
 
-    // Derive consolidated needsReview from all outstanding reasons
+    // 7. Derive consolidated needsReview from all outstanding reasons
     issue.needsReview = Boolean(issue.needsDuplicateReview || issue.needsClassificationReview);
 
     await issue.save();
 
-    const populatedIssue = await Issue.findById(issue._id)
-      .populate("userId", SAFE_USER_FIELDS)
-      .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
-      .populate("reviewedBy", SAFE_ADMIN_FIELDS);
+    // 8. Return populated document safely (supporting both real Mongoose queries and test stubs)
+    let query = Issue.findById(issue._id);
+    if (query && typeof query.populate === "function") {
+      query = query
+        .populate("userId", SAFE_USER_FIELDS)
+        .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
+        .populate("reviewedBy", SAFE_ADMIN_FIELDS)
+        .populate("statusHistory.changedBy", SAFE_ADMIN_FIELDS);
+    }
+    const populatedIssue = await query;
 
-    res.status(200).json(populatedIssue);
+    res.status(200).json(populatedIssue || issue);
   } catch (err) {
     res.status(500).json({ error: true, message: "Error updating issue", details: err.message });
   }
@@ -799,4 +879,27 @@ exports.retryNotificationEmail = async (req, res) => {
     });
   }
 };
+
+/**
+ * Sprint Block 2: Performance Analytics & Aggregation
+ * Endpoint: GET /api/admin-dashboard/analytics
+ * Returns database-backed aggregation metrics (totals, open, resolved, MTTR, breakdowns, hotspots, daily trend).
+ */
+exports.getAnalytics = async (req, res) => {
+  try {
+    const { days } = req.query;
+    const analytics = await getDashboardAnalytics({ days });
+    return res.status(200).json({
+      error: false,
+      data: analytics
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: true,
+      message: "Failed to generate dashboard analytics",
+      details: err.message
+    });
+  }
+};
+
 
