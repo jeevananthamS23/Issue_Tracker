@@ -8,6 +8,18 @@ import {
   calculateHaversineDistance,
   formatDistance
 } from "../utils/exifParser";
+import {
+  FileText,
+  Clock,
+  CheckCircle2,
+  ThumbsUp,
+  Camera,
+  AlertTriangle,
+  Plus,
+  X,
+  ShieldCheck,
+  Layers
+} from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -498,31 +510,102 @@ const Dashboard = () => {
     });
   };
   
+  // Citizen overview metrics calculation
+  const metrics = {
+    total: userIssues.length,
+    inProgress: userIssues.filter((i) => i.status === "in-progress").length,
+    resolved: userIssues.filter((i) => i.status === "resolved").length,
+    votes: userIssues.reduce((acc, curr) => acc + (curr.votes || 0), 0)
+  };
+  
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h1>Your Dashboard</h1>
-        {!isReporting ? (
-          <button 
-            className="report-btn"
-            onClick={handleOpenReport}
-            data-testid="report-new-issue-btn"
-          >
-            Report New Issue
-          </button>
-        ) : (
-          <button 
-            className="cancel-btn"
-            onClick={handleCancelReport}
-            data-testid="cancel-report-btn"
-          >
-            Cancel Report
-          </button>
-        )}
+        <div className="dashboard-header-text">
+          <div className="portal-badge">
+            <ShieldCheck size={14} className="portal-badge-icon" />
+            <span>Civic Incident Management</span>
+          </div>
+          <h1>Your Dashboard</h1>
+          <p className="dashboard-header-subtitle">
+            Report public infrastructure defects, monitor municipal resolution, and track community improvements.
+          </p>
+        </div>
+        <div className="dashboard-header-actions">
+          {!isReporting ? (
+            <button 
+              className="report-btn"
+              onClick={handleOpenReport}
+              data-testid="report-new-issue-btn"
+            >
+              <Plus size={18} />
+              <span>Report New Issue</span>
+            </button>
+          ) : (
+            <button 
+              className="cancel-btn"
+              onClick={handleCancelReport}
+              data-testid="cancel-report-btn"
+            >
+              <X size={18} />
+              <span>Cancel Report</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Institutional Citizen Metrics Summary Grid */}
+      <div className="citizen-metrics-grid">
+        <div className="metric-card">
+          <div className="metric-icon total">
+            <FileText size={20} />
+          </div>
+          <div className="metric-content">
+            <span className="metric-value">{metrics.total}</span>
+            <span className="metric-label">Total Reported</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon in-progress">
+            <Clock size={20} />
+          </div>
+          <div className="metric-content">
+            <span className="metric-value">{metrics.inProgress}</span>
+            <span className="metric-label">In Progress</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon resolved">
+            <CheckCircle2 size={20} />
+          </div>
+          <div className="metric-content">
+            <span className="metric-value">{metrics.resolved}</span>
+            <span className="metric-label">Resolved</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon votes">
+            <ThumbsUp size={20} />
+          </div>
+          <div className="metric-content">
+            <span className="metric-value">{metrics.votes}</span>
+            <span className="metric-label">Community Votes</span>
+          </div>
+        </div>
       </div>
       
       {isReporting && (
         <div className="report-form-container">
+          <div className="report-form-header">
+            <div className="report-form-title-group">
+              <span className="form-step-tag">Incident Intake</span>
+              <h2>Report a Community Issue</h2>
+              <p className="report-form-subtitle">
+                Pinpoint the incident on the map or upload a geotagged photo for automated verification.
+              </p>
+            </div>
+          </div>
+
           <div className="map-instructions">
             <p>Select the issue location on the map (or upload a geotagged photo):</p>
             {exifExtracting && (
@@ -560,7 +643,7 @@ const Dashboard = () => {
             <MapContainer 
               center={defaultCenter} 
               zoom={13} 
-              style={{ height: "400px", width: "100%" }}
+              style={{ height: "380px", width: "100%" }}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -633,62 +716,58 @@ const Dashboard = () => {
             </div>
           )}
           
-          <form onSubmit={handleSubmit} className="report-form">
+          <form onSubmit={handleSubmit} className="report-form" data-testid="report-form">
             <div className="form-group">
               <label htmlFor="type">Issue Type:</label>
-            <select
-  id="type"
-  name="type"
-  value={newIssue.type}
-  onChange={handleChange}
-  required
->
-  <option value="">-- Select Issue Type --</option>
-
-  <optgroup label="Village Issues">
-    <option value="unpaved-road">Unpaved Road</option>
-    <option value="no-drainage">No Drainage System</option>
-    <option value="electricity-outage">Electricity Outage</option>
-    <option value="low-voltage">Low Voltage</option>
-    <option value="water-scarcity">Water Scarcity</option>
-    <option value="open-defecation">Open Defecation</option>
-    <option value="animal-problem">Stray Animals</option>
-    <option value="damaged-borewell">Damaged Borewell</option>
-    <option value="lack-of-toilets">Lack of Toilets</option>
-    <option value="unclean-handpumps">Unclean Hand Pumps</option>
-    <option value="school-infra">Poor School Infrastructure</option>
-    <option value="no-medical-center">No Primary Medical Center</option>
-    <option value="poor-connectivity">Poor Mobile Network</option>
-  </optgroup>
-
-  <optgroup label="City Issues">
-    <option value="pothole">Pothole</option>
-    <option value="street-light">Street Light Out</option>
-    <option value="graffiti">Graffiti</option>
-    <option value="trash">Trash/Debris</option>
-    <option value="water-leak">Water Leak</option>
-    <option value="road-damage">Road Damage</option>
-    <option value="sewage">Sewage Overflow</option>
-    <option value="illegal-dumping">Illegal Dumping</option>
-    <option value="abandoned-vehicle">Abandoned Vehicle</option>
-    <option value="noise">Noise Complaint</option>
-    <option value="construction-waste">Construction Waste</option>
-    <option value="traffic-signal">Broken Traffic Signal</option>
-    <option value="encroachment">Footpath Encroachment</option>
-    <option value="overflowing-dustbin">Overflowing Dustbin</option>
-  </optgroup>
-
-  <optgroup label="Shared/Common Issues">
-    <option value="blocked-drain">Blocked Drainage</option>
-    <option value="sanitation">Poor Sanitation</option>
-    <option value="foul-smell">Foul Smell/Dead Animal</option>
-    <option value="drinking-water">Contaminated Drinking Water</option>
-    <option value="school-issues">School Facility Issue</option>
-    <option value="healthcare">Lack of Healthcare Access</option>
-    <option value="other">Other</option>
-  </optgroup>
-</select>
-
+              <select
+                id="type"
+                name="type"
+                value={newIssue.type}
+                onChange={handleChange}
+                required
+              >
+                <option value="">-- Select Issue Type --</option>
+                <optgroup label="Village Issues">
+                  <option value="unpaved-road">Unpaved Road</option>
+                  <option value="no-drainage">No Drainage System</option>
+                  <option value="electricity-outage">Electricity Outage</option>
+                  <option value="low-voltage">Low Voltage</option>
+                  <option value="water-scarcity">Water Scarcity</option>
+                  <option value="open-defecation">Open Defecation</option>
+                  <option value="animal-problem">Stray Animals</option>
+                  <option value="damaged-borewell">Damaged Borewell</option>
+                  <option value="lack-of-toilets">Lack of Toilets</option>
+                  <option value="unclean-handpumps">Unclean Hand Pumps</option>
+                  <option value="school-infra">Poor School Infrastructure</option>
+                  <option value="no-medical-center">No Primary Medical Center</option>
+                  <option value="poor-connectivity">Poor Mobile Network</option>
+                </optgroup>
+                <optgroup label="City Issues">
+                  <option value="pothole">Pothole</option>
+                  <option value="street-light">Street Light Out</option>
+                  <option value="graffiti">Graffiti</option>
+                  <option value="trash">Trash/Debris</option>
+                  <option value="water-leak">Water Leak</option>
+                  <option value="road-damage">Road Damage</option>
+                  <option value="sewage">Sewage Overflow</option>
+                  <option value="illegal-dumping">Illegal Dumping</option>
+                  <option value="abandoned-vehicle">Abandoned Vehicle</option>
+                  <option value="noise">Noise Complaint</option>
+                  <option value="construction-waste">Construction Waste</option>
+                  <option value="traffic-signal">Broken Traffic Signal</option>
+                  <option value="encroachment">Footpath Encroachment</option>
+                  <option value="overflowing-dustbin">Overflowing Dustbin</option>
+                </optgroup>
+                <optgroup label="Shared/Common Issues">
+                  <option value="blocked-drain">Blocked Drainage</option>
+                  <option value="sanitation">Poor Sanitation</option>
+                  <option value="foul-smell">Foul Smell/Dead Animal</option>
+                  <option value="drinking-water">Contaminated Drinking Water</option>
+                  <option value="school-issues">School Facility Issue</option>
+                  <option value="healthcare">Lack of Healthcare Access</option>
+                  <option value="other">Other</option>
+                </optgroup>
+              </select>
             </div>
             
             <div className="form-group">
@@ -698,7 +777,7 @@ const Dashboard = () => {
                 name="description"
                 value={newIssue.description}
                 onChange={handleChange}
-                placeholder="Describe the issue..."
+                placeholder="Describe the issue, landmarks, and severity in detail..."
                 required
               ></textarea>
             </div>
@@ -722,7 +801,7 @@ const Dashboard = () => {
                   onClick={() => fileInputRef.current && fileInputRef.current.click()}
                   data-testid="choose-file-btn"
                 >
-                  Choose File
+                  <Camera size={16} /> Choose File
                 </button>
                 <span className="file-name" data-testid="file-name">
                   {newIssue.image ? newIssue.image.name : "No file chosen"}
@@ -748,7 +827,7 @@ const Dashboard = () => {
                 )}
               </div>
 
-              {/* Instant Image Preview Thumbnail (Task 1.2) */}
+              {/* Instant Image Preview Thumbnail */}
               {imagePreview && (
                 <div className="image-preview-container" data-testid="image-preview-container">
                   <img
@@ -823,12 +902,23 @@ const Dashboard = () => {
       )}
       
       <div className="issues-section">
-        <h2>Your Reported Issues</h2>
+        <div className="section-header-row">
+          <div>
+            <h2>Your Reported Issues</h2>
+            <p className="section-subtitle">Real-time status tracking for issues submitted by your account</p>
+          </div>
+          {userIssues.length > 0 && (
+            <span className="issues-count-badge">
+              {userIssues.length} {userIssues.length === 1 ? "Issue" : "Issues"}
+            </span>
+          )}
+        </div>
         
         {loading ? (
           <div className="page-loading" data-testid="issues-loading">Loading your issues...</div>
         ) : fetchError ? (
           <div className="issues-error-state" data-testid="issues-error">
+            <AlertTriangle size={32} className="error-icon" />
             <p>{fetchError}</p>
             <button
               type="button"
@@ -840,7 +930,24 @@ const Dashboard = () => {
             </button>
           </div>
         ) : userIssues.length === 0 ? (
-          <p className="no-issues-msg" data-testid="issues-empty">You haven't reported any issues yet.</p>
+          <div className="issues-empty-state" data-testid="issues-empty">
+            <div className="empty-state-icon">
+              <Layers size={36} />
+            </div>
+            <p className="no-issues-msg">You haven't reported any issues yet.</p>
+            <p className="empty-subtext">
+              Spot a pothole, street light outage, or municipal problem? Click "Report New Issue" above to submit your report.
+            </p>
+            {!isReporting && (
+              <button
+                type="button"
+                className="report-btn empty-action-btn"
+                onClick={handleOpenReport}
+              >
+                <Plus size={16} /> Report Your First Issue
+              </button>
+            )}
+          </div>
         ) : (
           <>
             <div className="issues-list">
@@ -853,23 +960,37 @@ const Dashboard = () => {
 
                 return paginatedIssues.map((issue) => (
                   <div key={issue._id} className="issue-card" data-testid="issue-card">
+                    <div className="issue-card-meta-bar">
+                      <span className="issue-ref-id">
+                        {issue._id ? `#${issue._id.slice(-6).toUpperCase()}` : "ISSUE"}
+                      </span>
+                      <span className={`status-pill status-${issue.status}`}>
+                        <span 
+                          className="status-indicator" 
+                          style={getStatusStyle(issue.status)}
+                          title={issue.status}
+                        ></span>
+                        <span className="status-pill-text">
+                          {issue.status ? issue.status.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase()) : "Reported"}
+                        </span>
+                      </span>
+                    </div>
+
                     <div className="issue-header">
                       <h3>{issue.type}</h3>
-                      <span 
-                        className="status-indicator" 
-                        style={getStatusStyle(issue.status)}
-                        title={issue.status}
-                      ></span>
                     </div>
                     
                     <p className="description">{issue.description}</p>
                     
                     {issue.imageUrl && (
-                      <img 
-                         src={getImageUrl(issue.imageUrl)}
-                         alt={issue.type} 
-                         className="issue-image"
-                         />
+                      <div className="issue-image-container">
+                        <img 
+                          src={getImageUrl(issue.imageUrl)}
+                          alt={issue.type} 
+                          className="issue-image"
+                          loading="lazy"
+                        />
+                      </div>
                     )}
                     
                     <div className="issue-footer">
@@ -928,7 +1049,12 @@ const Dashboard = () => {
       
       {userIssues.length > 0 && (
         <div className="issues-map-container">
-          <h2>Map of Your Issues</h2>
+          <div className="section-header-row">
+            <div>
+              <h2>Map of Your Issues</h2>
+              <p className="section-subtitle">Geographic visualization of your reported incidents and current status</p>
+            </div>
+          </div>
           <div className="map-container">
             <MapContainer 
               center={defaultCenter} 
@@ -952,10 +1078,10 @@ const Dashboard = () => {
                       <p>{issue.description}</p>
                       {issue.imageUrl && (
                          <img 
-                     src={getImageUrl(issue.imageUrl)}
-                     alt={issue.type} 
-                     className="issue-image"
-                     />
+                           src={getImageUrl(issue.imageUrl)}
+                           alt={issue.type} 
+                           className="issue-image"
+                         />
                       )}
                       <div className="issue-details">
                         <span className={`status-badge ${issue.status}`}>
