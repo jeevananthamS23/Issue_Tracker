@@ -329,6 +329,10 @@ const issueSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    needsManualReview: {
+      type: Boolean,
+      default: false
+    },
     severity: {
       type: Number,
       min: 1,
@@ -394,11 +398,12 @@ issueSchema.virtual("cluster_id")
     this.clusterId = val;
   });
 
-// Pre-save hook: derive consolidated needsReview from outstanding review reasons
+// Pre-save hook: derive consolidated needsReview and needsManualReview from outstanding review reasons
 issueSchema.pre("save", function (next) {
   if (this.isModified("needsDuplicateReview") || this.isModified("needsClassificationReview")) {
     this.needsReview = Boolean(this.needsDuplicateReview || this.needsClassificationReview);
   }
+  this.needsManualReview = Boolean(this.needsReview);
   next();
 });
 

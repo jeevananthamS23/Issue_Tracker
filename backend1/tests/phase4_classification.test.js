@@ -389,6 +389,41 @@ async function runTests() {
   });
 
   if (realDbAvailable) {
+    await test("16. reportIssue flags needsReview: true when AI inference encounters an error on uploaded image", async () => {
+      // Simulate submission with an image where AI service cannot be reached (soft failure)
+      const originalUrl = process.env.AI_SERVICE_URL;
+      process.env.AI_SERVICE_URL = "http://127.0.0.1:59999"; // Non-existent port to force immediate refusal
+
+      const req = {
+        user: { userId: testUserId },
+        body: {
+          type: "pothole",
+          description: "Pothole with image where AI fails",
+          imageUrl: "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+          lat: 13.0850,
+          lng: 80.2750
+        }
+      };
+      const res = createMockRes();
+      await reportIssue(req, res);
+
+      process.env.AI_SERVICE_URL = originalUrl;
+
+      assert.strictEqual(res.statusCode, 201, "Issue submission must succeed even when AI inference fails");
+      assert.strictEqual(res.body.issue.needsReview, true, "needsReview must be true when AI inference fails on image");
+      assert.strictEqual(res.body.issue.needsManualReview, true, "needsManualReview must be true in API response");
+      assert.strictEqual(res.body.issue.department, "Roads & Infrastructure", "Must preserve valid citizen department fallback");
+
+      // Verify direct database persistence (not merely response decoration)
+      const persisted = await Issue.findById(res.body.issue._id);
+      assert.ok(persisted, "Issue must be persisted in database");
+      assert.strictEqual(persisted.needsReview, true, "needsReview must be persisted as true in MongoDB");
+      assert.strictEqual(persisted.needsManualReview, true, "needsManualReview must be persisted as true in MongoDB");
+      assert.strictEqual(persisted.needsClassificationReview, true, "needsClassificationReview must be persisted as true in MongoDB");
+    });
+  }
+
+  if (realDbAvailable) {
     await mongoose.connection.db.dropDatabase();
     await mongoose.disconnect();
     console.log("[Teardown] Disposable test database dropped and disconnected.");

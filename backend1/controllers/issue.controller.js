@@ -166,7 +166,7 @@ exports.reportIssue = async (req, res) => {
       }
     }
 
-    const imageUrl = req.file ? req.file.path : null;
+    const imageUrl = req.file ? req.file.path : (req.body?.imageUrl || null);
 
     // Two-Stage Duplicate Suppression Assessment (Research Paper Section VI-C)
     // Stage 1 (Geospatial shortlist) + Stage 2 (CLIP embedding comparison)
@@ -225,8 +225,21 @@ exports.reportIssue = async (req, res) => {
 
     const assignedDepartment = routingDecision.department;
 
-    // Preserve all review flags: Combine duplicate review requirement with classification review requirement
-    const finalNeedsReview = Boolean(duplicateAssessment.needsReview || routingDecision.classificationNeedsReview);
+    // Preserve all review flags: If AI inference failed on an uploaded image, set manual review requirement
+    const aiInferenceFailed = Boolean(
+      imageUrl && (
+        !classificationResult ||
+        classificationResult.status === "exception" ||
+        classificationResult.status === "error" ||
+        Boolean(classificationResult.error)
+      )
+    );
+
+    const finalNeedsReview = Boolean(
+      duplicateAssessment.needsReview ||
+      routingDecision.classificationNeedsReview ||
+      aiInferenceFailed
+    );
 
     const combinedAiDiagnostic = {
       serviceStatus: duplicateAssessment.aiDiagnostic?.serviceStatus || "ok",
@@ -256,8 +269,9 @@ exports.reportIssue = async (req, res) => {
       duplicateOf: duplicateAssessment.duplicateOf,
       similarityScore: duplicateAssessment.similarityScore,
       needsDuplicateReview: Boolean(duplicateAssessment.needsReview),
-      needsClassificationReview: Boolean(routingDecision.classificationNeedsReview),
+      needsClassificationReview: Boolean(routingDecision.classificationNeedsReview || aiInferenceFailed),
       needsReview: finalNeedsReview,
+      needsManualReview: finalNeedsReview,
       aiDiagnostic: combinedAiDiagnostic
     });
 
@@ -271,6 +285,7 @@ exports.reportIssue = async (req, res) => {
     delete responseIssue.aiDiagnostic;
     delete responseIssue.classificationConfidence;
     delete responseIssue.locationMetadata;
+    responseIssue.needsManualReview = Boolean(responseIssue.needsReview);
 
     res.status(201).json({
       message: "Issue reported successfully",

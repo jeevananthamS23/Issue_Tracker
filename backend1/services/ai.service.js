@@ -15,6 +15,10 @@ const DEFAULT_SIMILARITY_THRESHOLD = parseFloat(process.env.CLIP_SIMILARITY_THRE
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.AI_SERVICE_TIMEOUT_MS, 10) || 3500;
 const EXPECTED_EMBEDDING_DIM = 512;
 
+function getAiServiceUrl() {
+  return (process.env.AI_SERVICE_URL || DEFAULT_AI_SERVICE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+}
+
 /**
  * Calculates cosine similarity between two float vectors.
  * Handles zero vectors, mismatched dimensions, and non-finite values safely.
@@ -124,7 +128,7 @@ async function fetchClipEmbedding(imageUrl, timeoutMs = DEFAULT_TIMEOUT_MS) {
       headers["X-API-Key"] = process.env.AI_SERVICE_API_KEY.trim();
     }
 
-    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/embed-image`, {
+    const response = await fetch(`${getAiServiceUrl()}/embed-image`, {
       method: "POST",
       headers,
       body: JSON.stringify({ image_url: imageUrl }),
@@ -437,7 +441,7 @@ async function classifyIssueImage(imageUrl, options = {}) {
       candidate_category: candidateCategory || null
     };
 
-    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/classify-issue`, {
+    const response = await fetch(`${getAiServiceUrl()}/classify-issue`, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
@@ -536,7 +540,7 @@ async function extractOcrGps(imageUrl, timeoutMs = 2500) {
       headers["X-API-Key"] = process.env.AI_SERVICE_API_KEY.trim();
     }
 
-    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/extract-ocr-gps`, {
+    const response = await fetch(`${getAiServiceUrl()}/extract-ocr-gps`, {
       method: "POST",
       headers,
       body: JSON.stringify({ image_url: imageUrl.trim() }),
@@ -745,7 +749,7 @@ async function extractOcrGpsFromBuffer(imageBuffer, options = {}) {
     const formData = new FormData();
     formData.append("file", new Blob([imageBuffer], { type: mimetype }), filename);
 
-    const response = await fetch(`${DEFAULT_AI_SERVICE_URL}/extract-ocr-upload`, {
+    const response = await fetch(`${getAiServiceUrl()}/extract-ocr-upload`, {
       method: "POST",
       headers,
       body: formData,

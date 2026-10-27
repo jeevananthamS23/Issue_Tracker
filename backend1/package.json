@@ -5,6 +5,10 @@
   "scripts": {
     "start": "node server.js",
     "test": "node tests/phase1_security.test.js",
+    "test:unit": "node --test tests/phase1_security.test.js tests/http_integration.test.js tests/createAdmin.test.js",
+    "test:sprint": "node --test tests/status_lifecycle.test.js tests/analytics.test.js tests/phase2_e2e_audit.test.js",
+    "test:integration": "node --test tests/status_lifecycle.test.js tests/analytics.test.js tests/phase2_e2e_audit.test.js && node tests/phase3_spatial.test.js && node tests/phase3_geojson.test.js && node tests/phase3_clip.test.js && node tests/phase3_duplicate_review.test.js && node tests/phase3_remediation.test.js && node tests/phase4_classification.test.js && node tests/phase4_dbscan_hotspot.test.js && node tests/phase4_hotspot_api_runner.test.js && node tests/phase4_review_decoupling.test.js && node tests/phase4_admin_notifications.test.js && node tests/phase5_geosource.test.js && node tests/phase5_ocr_proxy.test.js",
+    "test:staging": "node tests/staging_ai_integration.test.js",
     "admin:create": "node scripts/createAdmin.js"
   },
   "keywords": [],

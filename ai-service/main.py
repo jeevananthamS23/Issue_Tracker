@@ -80,8 +80,20 @@ _clip_processor = None
 _model_load_attempted = False
 _model_load_error = None
 
-# Civic classification model constants & references (Phase 4.1B)
+# Civic classification model constants & references (Phase 4.1B & Phase 1)
+DEFAULT_CIVIC_MODEL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "checkpoints",
+    "phase1_road_classifier",
+    "run_20261027_pretrained_bs8_e10",
+    "best_model.pt"
+)
 CIVIC_MODEL_PATH = os.getenv("CIVIC_MODEL_PATH", "").strip()
+ROAD_CLASSIFIER_THRESHOLDS = {
+    "pothole": 0.75,
+    "road_damage": 0.35
+}
+ROAD_CLASSIFIER_LABELS = ["pothole", "road_damage"]
 CIVIC_CATEGORIES = [
     "pothole",
     "road_damage",
@@ -117,36 +129,69 @@ BASE_HAZARD_SCORES = {
 }
 
 _civic_model = None
+_civic_model_metadata = None
 _civic_model_attempted = False
 _civic_model_error = None
 
 
-def get_civic_classifier():
+def get_civic_classifier(model_path: Optional[str] = None, force_reload: bool = False):
     """
     Attempts to load a genuinely trained civic defect classification model if configured.
     Strict truthfulness: If CIVIC_MODEL_PATH is unset or invalid, returns None.
-    An untrained ImageNet backbone with random head is NOT loaded or claimed as trained.
+    When configured, instantiates MobileNetV3-Small and loads checkpoint weights and metadata.
     """
-    global _civic_model, _civic_model_attempted, _civic_model_error
-    if _civic_model_attempted:
+    global _civic_model, _civic_model_metadata, _civic_model_attempted, _civic_model_error
+    if _civic_model_attempted and not force_reload:
         return _civic_model
 
+    target_path = model_path if model_path is not None else CIVIC_MODEL_PATH
+    target_path = (target_path or "").strip()
+
     _civic_model_attempted = True
-    if not CIVIC_MODEL_PATH or not os.path.exists(CIVIC_MODEL_PATH):
-        _civic_model_error = "No trained civic classification checkpoint configured or found"
+    if not target_path or not os.path.exists(target_path):
+        _civic_model_error = f"No trained civic classification checkpoint configured or found at '{target_path}'"
+        _civic_model = None
+        _civic_model_metadata = None
         return None
 
     try:
         import torch
-        logger.info(f"Loading trained civic classification checkpoint from {CIVIC_MODEL_PATH}...")
-        loaded = torch.load(CIVIC_MODEL_PATH, map_location=DEVICE)
-        _civic_model = loaded
+        from scripts.train_road_classifier import build_mobilenetv3_road_classifier, get_transforms
+
+        logger.info(f"Loading trained civic classification checkpoint from {target_path}...")
+        checkpoint = torch.load(target_path, map_location=DEVICE)
+
+        model = build_mobilenetv3_road_classifier(num_classes=2, pretrained=False)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.to(DEVICE)
+        model.eval()
+
+        val_metrics = checkpoint.get("val_metrics", {})
+        classes_meta = val_metrics.get("classes", {})
+        thresholds = {
+            "pothole": float(classes_meta.get("pothole", {}).get("threshold", ROAD_CLASSIFIER_THRESHOLDS["pothole"])),
+            "road_damage": float(classes_meta.get("road_damage", {}).get("threshold", ROAD_CLASSIFIER_THRESHOLDS["road_damage"]))
+        }
+
+        metadata = {
+            "model_name": "MobileNetV3-Small",
+            "version": "MobileNetV3-Small_phase1_road_epoch8",
+            "thresholds": thresholds,
+            "labels": ROAD_CLASSIFIER_LABELS,
+            "transform": get_transforms(split="val", image_size=224),
+            "checkpoint_path": target_path
+        }
+        model.metadata = metadata
+
+        _civic_model = model
+        _civic_model_metadata = metadata
         _civic_model_error = None
-        logger.info("Civic classification model loaded successfully.")
+        logger.info(f"Civic road classification model loaded successfully. Thresholds: {thresholds}")
     except Exception as e:
         _civic_model_error = str(e)
         logger.warning(f"Failed to load civic checkpoint ({e}). Model unavailable.")
         _civic_model = None
+        _civic_model_metadata = None
 
     return _civic_model
 
@@ -203,6 +248,137 @@ def compute_heuristic_severity(image: Image.Image, candidate_category: Optional[
     except Exception as e:
         logger.warning(f"Error computing heuristic severity: {e}")
         return None, None
+
+
+def classify_road_defect_image(image: Image.Image, candidate_category: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Executes inference using the trained MobileNetV3-Small road defect classifier.
+    Truthfulness guarantees:
+    - If no checkpoint is configured or found, reports mode='checkpoint_unavailable',
+      category=None, confidence=None, is_trained_model=False, and returns heuristic severity.
+    - If checkpoint is loaded, evaluates multi-label probabilities against validation-calibrated
+      thresholds (pothole >= 0.75, road_damage >= 0.35).
+    - If inference fails with an exception, returns status='error' with sanitized error details,
+      preserving heuristic severity so the submission pipeline can continue safely.
+    """
+    if image is None:
+        return {
+            "category": None,
+            "confidence": None,
+            "severity": None,
+            "suggested_department": None,
+            "model": "none",
+            "mode": "invalid_input",
+            "is_trained_model": False,
+            "severity_mode": None,
+            "status": "error",
+            "detected_classes": [],
+            "probabilities": {},
+            "thresholds": ROAD_CLASSIFIER_THRESHOLDS,
+            "model_version": None,
+            "error": "Image is null or invalid"
+        }
+
+    model = get_civic_classifier()
+    if model is None:
+        sev_val, sev_mode = compute_heuristic_severity(image, candidate_category)
+        return {
+            "category": None,
+            "confidence": None,
+            "severity": sev_val,
+            "suggested_department": None,
+            "model": "checkpoint_unavailable",
+            "mode": "checkpoint_unavailable",
+            "is_trained_model": False,
+            "severity_mode": sev_mode,
+            "status": "unavailable",
+            "detected_classes": [],
+            "probabilities": {},
+            "thresholds": ROAD_CLASSIFIER_THRESHOLDS,
+            "model_version": None,
+            "error": _civic_model_error or "No trained civic classification checkpoint configured or found"
+        }
+
+    metadata = getattr(model, "metadata", {})
+    try:
+        import torch
+        transform = metadata.get("transform")
+        if transform is None:
+            from scripts.train_road_classifier import get_transforms
+            transform = get_transforms(split="val", image_size=224)
+
+        img_rgb = image.convert("RGB")
+        tensor = transform(img_rgb).unsqueeze(0).to(DEVICE)
+
+        with torch.no_grad():
+            logits = model(tensor)
+            probs = torch.sigmoid(logits)[0]
+
+        prob_pothole = float(probs[0].item())
+        prob_road_damage = float(probs[1].item())
+        probabilities = {
+            "pothole": round(prob_pothole, 4),
+            "road_damage": round(prob_road_damage, 4)
+        }
+
+        th = metadata.get("thresholds", ROAD_CLASSIFIER_THRESHOLDS)
+        is_pothole = prob_pothole >= th["pothole"]
+        is_road_damage = prob_road_damage >= th["road_damage"]
+
+        detected = []
+        if is_pothole:
+            detected.append("pothole")
+        if is_road_damage:
+            detected.append("road_damage")
+
+        if is_pothole:
+            pred_category = "pothole"
+            confidence = round(prob_pothole, 4)
+        elif is_road_damage:
+            pred_category = "road_damage"
+            confidence = round(prob_road_damage, 4)
+        else:
+            pred_category = None
+            confidence = round(max(prob_pothole, prob_road_damage), 4)
+
+        dept = CANONICAL_DEPARTMENT_MAP.get(pred_category, "Roads & Infrastructure" if pred_category else None)
+        sev_val, sev_mode = compute_heuristic_severity(image, pred_category or candidate_category)
+
+        return {
+            "category": pred_category,
+            "confidence": confidence,
+            "severity": sev_val,
+            "suggested_department": dept,
+            "model": metadata.get("version", "MobileNetV3-Small_phase1_road"),
+            "mode": "trained_checkpoint",
+            "is_trained_model": True,
+            "severity_mode": sev_mode,
+            "status": "classified" if pred_category else "unverified",
+            "detected_classes": detected,
+            "probabilities": probabilities,
+            "thresholds": th,
+            "model_version": metadata.get("version", "MobileNetV3-Small_phase1_road_epoch8"),
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"Inference execution failed on image: {e}")
+        sev_val, sev_mode = compute_heuristic_severity(image, candidate_category)
+        return {
+            "category": None,
+            "confidence": None,
+            "severity": sev_val,
+            "suggested_department": None,
+            "model": metadata.get("version", "MobileNetV3-Small_phase1_road"),
+            "mode": "inference_error",
+            "is_trained_model": True,
+            "severity_mode": sev_mode,
+            "status": "error",
+            "detected_classes": [],
+            "probabilities": {},
+            "thresholds": metadata.get("thresholds", ROAD_CLASSIFIER_THRESHOLDS),
+            "model_version": metadata.get("version"),
+            "error": str(e)
+        }
 
 
 
@@ -842,46 +1018,31 @@ class ClassifyIssueResponse(BaseModel):
     severity: Optional[float] = Field(None, description="Estimated severity score [1.0, 10.0]")
     suggested_department: Optional[str] = Field(None, description="Department suggested by classification")
     model: str = Field(..., description="Truthful model identifier")
-    mode: str = Field(..., description="Operational mode: trained_checkpoint or checkpoint_unavailable")
+    mode: str = Field(..., description="Operational mode: trained_checkpoint, checkpoint_unavailable, or inference_error")
     is_trained_model: bool = Field(False, description="Whether a genuine trained checkpoint was used")
     severity_mode: Optional[str] = Field(None, description="Severity estimator mode: rule_based_heuristic or null")
-    status: str = Field(..., description="Inference status: classified, unverified, or unavailable")
+    status: str = Field(..., description="Inference status: classified, unverified, unavailable, or error")
+    detected_classes: Optional[List[str]] = Field(default_factory=list, description="All categories exceeding calibrated threshold")
+    probabilities: Optional[Dict[str, float]] = Field(default_factory=dict, description="Sigmoid probabilities for defect classes")
+    thresholds: Optional[Dict[str, float]] = Field(None, description="Calibrated decision thresholds used")
+    model_version: Optional[str] = Field(None, description="Model checkpoint identifier")
+    error: Optional[str] = Field(None, description="Error details if inference failed")
 
 
 @app.post("/classify-issue", response_model=ClassifyIssueResponse, dependencies=[Depends(verify_api_key)])
 def classify_issue_url(payload: ClassifyIssueRequest):
     """
-    Classifies a civic issue image and provides a rule-based severity baseline.
-    Truthfulness:
-    - If no genuine trained checkpoint is configured, reports mode='checkpoint_unavailable',
-      category=None, confidence=None, and is_trained_model=False.
-    - Does NOT fabricate neural probabilities from heuristics.
-    - Severity is explicitly labeled as rule_based_heuristic within [1.0, 10.0].
+    Classifies a civic issue image from a verified URL and provides severity baseline.
+    Uses trained MobileNetV3-Small checkpoint when configured, or returns truthful
+    unavailable status when unconfigured.
     """
     url = payload.image_url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="image_url must not be empty.")
 
     image = load_image_from_url(url)
-    severity_val, severity_mode = compute_heuristic_severity(image, payload.candidate_category)
-
-    model = get_civic_classifier()
-    if model is not None:
-        # If a genuine trained checkpoint was loaded in the future
-        pass
-
-    # Truthful unavailable response when no checkpoint is present
-    return ClassifyIssueResponse(
-        category=None,
-        confidence=None,
-        severity=severity_val,
-        suggested_department=None,
-        model="checkpoint_unavailable",
-        mode="checkpoint_unavailable",
-        is_trained_model=False,
-        severity_mode=severity_mode,
-        status="unavailable"
-    )
+    res = classify_road_defect_image(image, payload.candidate_category)
+    return ClassifyIssueResponse(**res)
 
 
 @app.post("/classify-upload", response_model=ClassifyIssueResponse, dependencies=[Depends(verify_api_key)])
@@ -889,22 +1050,27 @@ async def classify_issue_upload(
     file: UploadFile = File(...),
     candidate_category: Optional[str] = None
 ):
-    """Classifies an uploaded image file and returns severity estimate with truthful metadata."""
+    """Classifies an uploaded image file and returns structured predictions with truthful metadata."""
     content = await file.read()
     image = load_image_from_bytes(content)
-    severity_val, severity_mode = compute_heuristic_severity(image, candidate_category)
+    res = classify_road_defect_image(image, candidate_category)
+    return ClassifyIssueResponse(**res)
 
-    return ClassifyIssueResponse(
-        category=None,
-        confidence=None,
-        severity=severity_val,
-        suggested_department=None,
-        model="checkpoint_unavailable",
-        mode="checkpoint_unavailable",
-        is_trained_model=False,
-        severity_mode=severity_mode,
-        status="unavailable"
-    )
+
+@app.post("/predict-road-defect", response_model=ClassifyIssueResponse, dependencies=[Depends(verify_api_key)])
+async def predict_road_defect(
+    file: UploadFile = File(...),
+    candidate_category: Optional[str] = None
+):
+    """
+    Dedicated endpoint for road defect classification from an uploaded image file.
+    Validates upload format/size, runs MobileNetV3-Small with calibrated thresholds,
+    and returns multi-label probabilities, confidence, and category assignment.
+    """
+    content = await file.read()
+    image = load_image_from_bytes(content)
+    res = classify_road_defect_image(image, candidate_category)
+    return ClassifyIssueResponse(**res)
 
 
 # ============================================================================

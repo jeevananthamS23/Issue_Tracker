@@ -1,0 +1,116 @@
+{
+  "status": "success",
+  "timestamp": "2026-10-27T08:03:24.536773+00:00",
+  "checkpoint_evaluated": "checkpoints\\phase1_road_classifier\\run_20261027_pretrained_bs8_e10\\best_model.pt",
+  "config_used": "checkpoints\\phase1_road_classifier\\run_20261027_pretrained_bs8_e10\\config.json",
+  "device": "cpu",
+  "batch_size": 16,
+  "elapsed_seconds": 98.52,
+  "test_samples_count": 2408,
+  "validation_baseline": {
+    "avg_loss": 0.5552,
+    "macro_f1": 0.7911,
+    "classes": {
+      "pothole": {
+        "threshold": 0.75,
+        "tp": 320,
+        "fp": 154,
+        "tn": 1768,
+        "fn": 129,
+        "precision": 0.6751,
+        "recall": 0.7127,
+        "f1": 0.6934,
+        "confusion_matrix": [
+          [
+            1768,
+            154
+          ],
+          [
+            129,
+            320
+          ]
+        ]
+      },
+      "road_damage": {
+        "threshold": 0.35,
+        "tp": 1381,
+        "fp": 260,
+        "tn": 644,
+        "fn": 86,
+        "precision": 0.8416,
+        "recall": 0.9414,
+        "f1": 0.8887,
+        "confusion_matrix": [
+          [
+            644,
+            260
+          ],
+          [
+            86,
+            1381
+          ]
+        ]
+      }
+    }
+  },
+  "test_results": {
+    "avg_loss": 0.5307,
+    "macro_f1": 0.7847,
+    "macro_precision": 0.7676,
+    "macro_recall": 0.8033,
+    "subset_accuracy": 0.7695,
+    "exact_match_count": 1853,
+    "hamming_loss": 0.1256,
+    "hamming_accuracy": 0.8744,
+    "frozen_thresholds": {
+      "pothole": 0.75,
+      "road_damage": 0.35
+    },
+    "classes": {
+      "pothole": {
+        "threshold": 0.75,
+        "tp": 290,
+        "fp": 142,
+        "tn": 1832,
+        "fn": 144,
+        "total": 2408,
+        "precision": 0.6713,
+        "recall": 0.6682,
+        "f1": 0.6697,
+        "accuracy": 0.8812,
+        "confusion_matrix": [
+          [
+            1832,
+            142
+          ],
+          [
+            144,
+            290
+          ]
+        ]
+      },
+      "road_damage": {
+        "threshold": 0.35,
+        "tp": 1430,
+        "fp": 225,
+        "tn": 659,
+        "fn": 94,
+        "total": 2408,
+        "precision": 0.864,
+        "recall": 0.9383,
+        "f1": 0.8997,
+        "accuracy": 0.8675,
+        "confusion_matrix": [
+          [
+            659,
+            225
+          ],
+          [
+            94,
+            1430
+          ]
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,231 @@
+name: CivicVision AI — Continuous Integration Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Backend Security & Unit Tests (Fast, Isolated, No Database)
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    name: Backend Unit & Security Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend1/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run unit & security test suites
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci_isolated_unit_test_jwt_secret_0123456789
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Backend Integration Tests (Requires Disposable MongoDB Container)
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    name: Backend Integration & Lifecycle Tests
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\").ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend1
+    env:
+      NODE_ENV: test
+      MONGO_URI: mongodb://127.0.0.1:27017/civicvision_ci_disposable
+      JWT_SECRET: ci_disposable_integration_jwt_secret_9876543210
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend1/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run Sprint Block 1 & 2 tests (Status Lifecycle, Analytics, E2E Audit)
+        run: npm run test:sprint
+
+      - name: Run Phase 3 Spatial & Candidate tests
+        run: node tests/phase3_spatial.test.js
+
+      - name: Run Phase 3 GeoJSON migration & query tests
+        run: node tests/phase3_geojson.test.js
+
+      - name: Run Phase 3 CLIP similarity & duplicate suppression tests
+        run: node tests/phase3_clip.test.js
+
+      - name: Run Phase 3.4A Duplicate review & privacy tests
+        run: node tests/phase3_duplicate_review.test.js
+
+      - name: Run Phase 3.3.1 Remediation regression tests
+        run: node tests/phase3_remediation.test.js
+
+      - name: Run Phase 4.1B Classification & routing tests
+        run: node tests/phase4_classification.test.js
+
+      - name: Run Phase 4.2B-B DBSCAN hotspot core tests
+        run: node tests/phase4_dbscan_hotspot.test.js
+
+      - name: Run Phase 4.2B-C Hotspot API & runner tests
+        run: node tests/phase4_hotspot_api_runner.test.js
+
+      - name: Run Phase 4.2A Review decoupling tests
+        run: node tests/phase4_review_decoupling.test.js
+
+      - name: Run Phase 4.2C-A Admin notifications & alert tests
+        run: node tests/phase4_admin_notifications.test.js
+
+      - name: Run Phase F5-C Location source & metadata tests
+        run: node tests/phase5_geosource.test.js
+
+      - name: Run Phase F5-D OCR proxy & rate limiter tests
+        run: node tests/phase5_ocr_proxy.test.js
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Citizen Frontend Tests (React / React Testing Library)
+  # ---------------------------------------------------------------------------
+  citizen-frontend:
+    name: Citizen Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend1
+    env:
+      CI: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend1/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run citizen frontend test suites
+        run: npm test -- --watchAll=false
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Admin Frontend Tests (React / React Testing Library)
+  # ---------------------------------------------------------------------------
+  admin-frontend:
+    name: Admin Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-frontend
+    env:
+      CI: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: admin-frontend/package-lock.json
+
+      - name: Install admin frontend dependencies
+        run: npm ci
+
+      - name: Run admin frontend test suites
+        run: npm test -- --watchAll=false
+
+  # ---------------------------------------------------------------------------
+  # Job 5: AI Microservice Tests (FastAPI / Python Unit Tests)
+  # ---------------------------------------------------------------------------
+  ai-service:
+    name: AI Microservice Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-service
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: ai-service/requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run deterministic AI service unit tests
+        run: python -m unittest test_security.py test_classification.py test_ocr_gps.py
+
+  # ---------------------------------------------------------------------------
+  # Job 6: Optional Staging Integration Smoke Test (Non-Blocking)
+  # ---------------------------------------------------------------------------
+  staging-smoke-test:
+    name: Staging AI Integration Smoke Test (Optional)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: backend1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend1/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run live staging verification test
+        run: npm run test:staging
+        env:
+          AI_SERVICE_URL: https://civicvision-ai-service.onrender.com

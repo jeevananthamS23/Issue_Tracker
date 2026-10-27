@@ -51,3 +51,11 @@ manifest_out/
 *.safetensors
 checkpoints/
 models/
+
+# Whitelist trained Phase 1 MobileNetV3 road classifier checkpoint for deployment
+!ai-service/checkpoints/
+!ai-service/checkpoints/phase1_road_classifier/
+!ai-service/checkpoints/phase1_road_classifier/run_20261027_pretrained_bs8_e10/
+!ai-service/checkpoints/phase1_road_classifier/run_20261027_pretrained_bs8_e10/best_model.pt
+!ai-service/checkpoints/phase1_road_classifier/run_20261027_pretrained_bs8_e10/test_evaluation_report.json
+!ai-service/checkpoints/phase1_road_classifier/run_20261027_pretrained_bs8_e10/test_evaluation_report.md

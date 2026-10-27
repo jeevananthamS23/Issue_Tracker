@@ -1,0 +1,50 @@
+[
+  {
+    "epoch": 1,
+    "train_loss": 0.8241148591041565,
+    "val_loss": 1.2146,
+    "val_macro_f1": 0.6889,
+    "val_classes": {
+      "pothole": {
+        "threshold": 0.1,
+        "tp": 7,
+        "fp": 9,
+        "tn": 0,
+        "fn": 0,
+        "precision": 0.4375,
+        "recall": 1.0,
+        "f1": 0.6087,
+        "confusion_matrix": [
+          [
+            0,
+            9
+          ],
+          [
+            0,
+            7
+          ]
+        ]
+      },
+      "road_damage": {
+        "threshold": 0.1,
+        "tp": 10,
+        "fp": 6,
+        "tn": 0,
+        "fn": 0,
+        "precision": 0.625,
+        "recall": 1.0,
+        "f1": 0.7692,
+        "confusion_matrix": [
+          [
+            0,
+            6
+          ],
+          [
+            0,
+            10
+          ]
+        ]
+      }
+    }
+  }
+]
