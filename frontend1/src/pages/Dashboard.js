@@ -56,6 +56,9 @@ const Dashboard = () => {
   // State for user's reported issues
   const [userIssues, setUserIssues] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
   
   // State for creating new issue
   const [markerPosition, setMarkerPosition] = useState(null);
@@ -96,22 +99,32 @@ const Dashboard = () => {
   const fileInputRef = useRef(null);
   
   // Fetch user's issues
-  useEffect(() => {
-    const fetchUserIssues = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const response = await API.get("/issues/user", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setUserIssues(response.data);
-        setLoading(false);
-      } catch (err) {
-        console.error("Failed to fetch user issues:", err);
-        setLoading(false);
+  const fetchUserIssues = useCallback(async () => {
+    try {
+      setFetchError(null);
+      const token = localStorage.getItem("token");
+      const response = await API.get("/issues/user", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setUserIssues(data);
+      } else if (data && Array.isArray(data.issues)) {
+        setUserIssues(data.issues);
+      } else {
+        setUserIssues([]);
       }
-    };
-    fetchUserIssues();
+      setLoading(false);
+    } catch (err) {
+      console.error("Failed to fetch user issues:", err);
+      setFetchError("Failed to load your reported issues. Please try again.");
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchUserIssues();
+  }, [fetchUserIssues]);
   
   // Reset all temporary report form data cleanly (Task 1.2)
   const resetReportForm = useCallback(() => {
@@ -443,11 +456,9 @@ const Dashboard = () => {
       resetReportForm();
       setIsReporting(false);
       
-      // Refresh user issues
-      const response = await API.get("/issues/user", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUserIssues(response.data);
+      // Refresh user issues and reset to page 1
+      await fetchUserIssues();
+      setCurrentPage(1);
 
       toast.success("Issue reported successfully!");
     } catch (err) {
@@ -815,41 +826,103 @@ const Dashboard = () => {
         <h2>Your Reported Issues</h2>
         
         {loading ? (
-          <div className="page-loading">Loading your issues...</div>
-        ) : userIssues.length === 0 ? (
-          <p>You haven't reported any issues yet.</p>
-        ) : (
-          <div className="issues-list">
-            {userIssues.map((issue) => (
-              <div key={issue._id} className="issue-card">
-                <div className="issue-header">
-                  <h3>{issue.type}</h3>
-                  <span 
-                    className="status-indicator" 
-                    style={getStatusStyle(issue.status)}
-                    title={issue.status}
-                  ></span>
-                </div>
-                
-                <p className="description">{issue.description}</p>
-                
-                {issue.imageUrl && (
-                  <img 
-                     src={getImageUrl(issue.imageUrl)}
-                     alt={issue.type} 
-                     className="issue-image"
-                     />
-                )}
-                
-                <div className="issue-footer">
-                  <span className="votes">Votes: {issue.votes}</span>
-                  <span className="date">
-                    {new Date(issue.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div className="page-loading" data-testid="issues-loading">Loading your issues...</div>
+        ) : fetchError ? (
+          <div className="issues-error-state" data-testid="issues-error">
+            <p>{fetchError}</p>
+            <button
+              type="button"
+              className="btn-retry"
+              onClick={() => fetchUserIssues()}
+              data-testid="issues-retry-btn"
+            >
+              Retry
+            </button>
           </div>
+        ) : userIssues.length === 0 ? (
+          <p className="no-issues-msg" data-testid="issues-empty">You haven't reported any issues yet.</p>
+        ) : (
+          <>
+            <div className="issues-list">
+              {(() => {
+                const totalPages = Math.ceil(userIssues.length / PAGE_SIZE) || 1;
+                const safePage = Math.min(Math.max(1, currentPage), totalPages);
+                const startIndex = (safePage - 1) * PAGE_SIZE;
+                const endIndex = safePage * PAGE_SIZE;
+                const paginatedIssues = userIssues.slice(startIndex, endIndex);
+
+                return paginatedIssues.map((issue) => (
+                  <div key={issue._id} className="issue-card" data-testid="issue-card">
+                    <div className="issue-header">
+                      <h3>{issue.type}</h3>
+                      <span 
+                        className="status-indicator" 
+                        style={getStatusStyle(issue.status)}
+                        title={issue.status}
+                      ></span>
+                    </div>
+                    
+                    <p className="description">{issue.description}</p>
+                    
+                    {issue.imageUrl && (
+                      <img 
+                         src={getImageUrl(issue.imageUrl)}
+                         alt={issue.type} 
+                         className="issue-image"
+                         />
+                    )}
+                    
+                    <div className="issue-footer">
+                      <span className="votes">Votes: {issue.votes}</span>
+                      <span className="date">
+                        {new Date(issue.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {userIssues.length > PAGE_SIZE && (() => {
+              const totalPages = Math.ceil(userIssues.length / PAGE_SIZE) || 1;
+              const safePage = Math.min(Math.max(1, currentPage), totalPages);
+              const startIndex = (safePage - 1) * PAGE_SIZE;
+              const endIndex = safePage * PAGE_SIZE;
+
+              return (
+                <div className="pagination-bar" data-testid="citizen-pagination">
+                  <span className="pagination-info">
+                    Showing {startIndex + 1}–{Math.min(endIndex, userIssues.length)} of {userIssues.length} issues
+                  </span>
+                  <div className="pagination-controls">
+                    <button
+                      type="button"
+                      className="pagination-btn"
+                      disabled={safePage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      data-testid="pagination-prev"
+                      aria-label="Previous page"
+                    >
+                      Previous
+                    </button>
+                    <span className="pagination-page-label">
+                      Page {safePage} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="pagination-btn"
+                      disabled={safePage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      data-testid="pagination-next"
+                      aria-label="Next page"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
         )}
       </div>
       

@@ -6,6 +6,11 @@ const { CANONICAL_CATEGORIES, normalizeCategory } = require("../services/routing
 const { executeHotspotJob } = require("../services/hotspotJob.service");
 const { retryNotificationEmail } = require("../services/adminNotification.service");
 const { getDashboardAnalytics } = require("../services/analytics.service");
+const {
+  parsePaginationParams,
+  buildPaginationResponse,
+  setPaginationHeaders
+} = require("../utils/pagination");
 
 const SAFE_DUPLICATE_OF_FIELDS = "type description imageUrl status location createdAt";
 const SAFE_USER_FIELDS = "fullName email";
@@ -62,13 +67,27 @@ function buildAdminFilter(query = {}) {
 exports.getAllIssues = async (req, res) => {
   try {
     const filter = buildAdminFilter(req.query);
-    const issues = await Issue.find(filter)
+    const { page, limit, skip, isPaginated } = parsePaginationParams(req.query);
+
+    const baseQuery = Issue.find(filter)
       .populate("userId", SAFE_USER_FIELDS)
       .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
       .populate("reviewedBy", SAFE_ADMIN_FIELDS)
       .populate("statusHistory.changedBy", SAFE_ADMIN_FIELDS)
       .sort({ createdAt: -1 });
 
+    if (isPaginated) {
+      const [issues, total] = await Promise.all([
+        baseQuery.skip(skip).limit(limit),
+        Issue.countDocuments(filter)
+      ]);
+      const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+      setPaginationHeaders(res, total, page, limit, totalPages);
+      return res.status(200).json(buildPaginationResponse(issues, total, page, limit));
+    }
+
+    const issues = await baseQuery;
+    setPaginationHeaders(res, issues.length, 1, issues.length || 1, 1);
     res.status(200).json(issues);
   } catch (err) {
     const isValidationError = err.message && (
@@ -87,13 +106,27 @@ exports.getAllIssues = async (req, res) => {
 exports.getFilteredIssues = async (req, res) => {
   try {
     const filter = buildAdminFilter(req.query);
-    const issues = await Issue.find(filter)
+    const { page, limit, skip, isPaginated } = parsePaginationParams(req.query);
+
+    const baseQuery = Issue.find(filter)
       .populate("userId", SAFE_USER_FIELDS)
       .populate("duplicateOf", SAFE_DUPLICATE_OF_FIELDS)
       .populate("reviewedBy", SAFE_ADMIN_FIELDS)
       .populate("statusHistory.changedBy", SAFE_ADMIN_FIELDS)
       .sort({ createdAt: -1 });
 
+    if (isPaginated) {
+      const [issues, total] = await Promise.all([
+        baseQuery.skip(skip).limit(limit),
+        Issue.countDocuments(filter)
+      ]);
+      const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+      setPaginationHeaders(res, total, page, limit, totalPages);
+      return res.status(200).json(buildPaginationResponse(issues, total, page, limit));
+    }
+
+    const issues = await baseQuery;
+    setPaginationHeaders(res, issues.length, 1, issues.length || 1, 1);
     res.status(200).json(issues);
   } catch (err) {
     const isValidationError = err.message && (

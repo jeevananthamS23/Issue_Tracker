@@ -410,4 +410,23 @@ issueSchema.pre("save", function (next) {
 // Geospatial 2dsphere index for spherical geometry queries ($near, $geoWithin, DBSCAN clustering)
 issueSchema.index({ location: "2dsphere" });
 
+// Compound and single-field query performance indexes (Task 1.3)
+// 1. Citizen issue history and timeline queries
+issueSchema.index({ userId: 1, createdAt: -1 });
+
+// 2. Status-based filtering and timeline queries
+issueSchema.index({ status: 1, createdAt: -1 });
+
+// 3. Triage & classification review queue queries
+issueSchema.index({ needsClassificationReview: 1, createdAt: -1 });
+
+// 4. Consolidated moderation queue queries
+issueSchema.index({ needsReview: 1, createdAt: -1 });
+
+// 5. Duplicate moderation queries
+issueSchema.index({ duplicateStatus: 1, createdAt: -1 });
+
+// 6. Global newest-first timeline index
+issueSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model("Issue", issueSchema);

@@ -7,9 +7,29 @@ const { assessIssueDuplicates, classifyIssueImage, extractOcrGpsFromBuffer } = r
 const { resolveIssueRouting, getDepartmentForCategory } = require("../services/routing.service");
 const { validateImageSignature } = require("../middleware/multer");
 
+const {
+  parsePaginationParams,
+  buildPaginationResponse,
+  setPaginationHeaders
+} = require("../utils/pagination");
+
 exports.getAllIssues = async (req, res) => {
   try {
-    const issues = await Issue.find().select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
+    const { page, limit, skip, isPaginated } = parsePaginationParams(req.query);
+    const query = Issue.find().select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
+
+    if (isPaginated) {
+      const [issues, total] = await Promise.all([
+        query.skip(skip).limit(limit),
+        Issue.countDocuments()
+      ]);
+      const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+      setPaginationHeaders(res, total, page, limit, totalPages);
+      return res.status(200).json(buildPaginationResponse(issues, total, page, limit));
+    }
+
+    const issues = await query;
+    setPaginationHeaders(res, issues.length, 1, issues.length || 1, 1);
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch issues" });
@@ -18,7 +38,22 @@ exports.getAllIssues = async (req, res) => {
 
 exports.getUserIssues = async (req, res) => {
   try {
-    const issues = await Issue.find({ userId: req.user.userId }).select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
+    const { page, limit, skip, isPaginated } = parsePaginationParams(req.query);
+    const filter = { userId: req.user.userId };
+    const query = Issue.find(filter).select("-internalNotes -aiDiagnostic -locationMetadata").sort({ createdAt: -1 });
+
+    if (isPaginated) {
+      const [issues, total] = await Promise.all([
+        query.skip(skip).limit(limit),
+        Issue.countDocuments(filter)
+      ]);
+      const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+      setPaginationHeaders(res, total, page, limit, totalPages);
+      return res.status(200).json(buildPaginationResponse(issues, total, page, limit));
+    }
+
+    const issues = await query;
+    setPaginationHeaders(res, issues.length, 1, issues.length || 1, 1);
     res.status(200).json(issues);
   } catch (err) {
     res.status(500).json({ error: true, message: "Failed to fetch user issues" });

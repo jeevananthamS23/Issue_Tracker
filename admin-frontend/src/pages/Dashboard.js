@@ -184,6 +184,15 @@ const Dashboard = () => {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [reviewFilter, setReviewFilter] = useState("all");
 
+  // Pagination state (Task 1.3)
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 20;
+
+  // Auto-reset page to 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, statusFilter, typeFilter, departmentFilter, reviewFilter, searchQuery]);
+
   // Selected issue for detail drawer / modal
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -241,7 +250,7 @@ const Dashboard = () => {
     try {
       setError(null);
       const res = await API.get("/admin-dashboard/issues");
-      setIssues(Array.isArray(res.data) ? res.data : []);
+      setIssues(Array.isArray(res.data) ? res.data : (res.data?.issues || []));
     } catch (err) {
       console.error("Error fetching admin issues:", err);
       setError(
@@ -548,6 +557,13 @@ const Dashboard = () => {
 
     return true;
   });
+
+  // Calculate pagination boundaries for filtered issues (Task 1.3)
+  const totalPages = Math.ceil(filteredIssues.length / PAGE_SIZE) || 1;
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
+  const endIndex = safePage * PAGE_SIZE;
+  const paginatedIssues = filteredIssues.slice(startIndex, endIndex);
 
   // Metric counts (derived from database-backed analytics aggregation when available)
   const totalCount = analytics?.summary?.totalIssues ?? issues.length;
@@ -988,7 +1004,7 @@ const Dashboard = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredIssues.map((issue) => (
+                      {paginatedIssues.map((issue) => (
                         <tr key={issue._id} className="issue-row">
                           <td className="type-cell">
                             <div className="type-badge-group">
@@ -1169,6 +1185,41 @@ const Dashboard = () => {
                       ))}
                     </tbody>
                   </table>
+
+                  {filteredIssues.length > PAGE_SIZE && (
+                    <div className="table-pagination-bar" data-testid="admin-pagination">
+                      <div className="pagination-summary">
+                        Showing <strong>{startIndex + 1}</strong> to{" "}
+                        <strong>{Math.min(endIndex, filteredIssues.length)}</strong> of{" "}
+                        <strong>{filteredIssues.length}</strong> issues
+                      </div>
+                      <div className="pagination-controls">
+                        <button
+                          type="button"
+                          className="pagination-btn"
+                          disabled={safePage === 1}
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          data-testid="pagination-prev"
+                          aria-label="Previous page"
+                        >
+                          Previous
+                        </button>
+                        <span className="pagination-indicator">
+                          Page {safePage} of {totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="pagination-btn"
+                          disabled={safePage >= totalPages}
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          data-testid="pagination-next"
+                          aria-label="Next page"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
