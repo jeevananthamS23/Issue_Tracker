@@ -10,9 +10,7 @@ import {
   Flame,
   RefreshCw,
   Building2,
-  Calendar,
-  ShieldCheck,
-  HelpCircle
+  ShieldCheck
 } from "lucide-react";
 import "./AnalyticsSection.css";
 
