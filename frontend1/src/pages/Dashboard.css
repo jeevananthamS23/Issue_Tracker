@@ -599,4 +599,74 @@ padding: 1.5rem;
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ==========================================================================
+   Task 1.2: Citizen Form Preview & Action Row Styles
+   ========================================================================== */
+
+.image-preview-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  animation: fadeIn 0.25s ease-in-out;
+}
+
+.image-preview-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preview-file-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+  word-break: break-all;
+}
+
+.btn-remove-preview {
+  display: inline-flex;
+  align-items: center;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  width: fit-content;
+  transition: all 0.2s ease;
+}
+
+.btn-remove-preview:hover {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+.form-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 1.5rem;
+}
+
+.form-inline-cancel-btn {
+  padding: 12px 24px;
+}
+
 

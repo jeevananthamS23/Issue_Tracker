@@ -14,3 +14,13 @@ jest.mock('react-leaflet', () => ({
   useMap: () => ({ setView: jest.fn() }),
   useMapEvents: () => null,
 }));
+
+// Safe URL mocks for file previews in test environment
+if (typeof window !== "undefined") {
+  window.URL.createObjectURL = jest.fn(() => "mock-blob-url");
+  window.URL.revokeObjectURL = jest.fn();
+}
+if (typeof global !== "undefined" && global.URL) {
+  global.URL.createObjectURL = jest.fn(() => "mock-blob-url");
+  global.URL.revokeObjectURL = jest.fn();
+}

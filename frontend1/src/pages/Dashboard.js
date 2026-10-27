@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from "react-leaflet";
 import { toast } from "react-toastify";
 import API, { getImageUrl } from "../api/api";
@@ -24,6 +24,12 @@ let defaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = defaultIcon;
+
+const INITIAL_ISSUE_STATE = Object.freeze({
+  type: "pothole",
+  description: "",
+  image: null,
+});
 
 // Map click handler component
 const AddMarkerOnClick = ({ onLocationSelect }) => {
@@ -61,11 +67,21 @@ const Dashboard = () => {
   const [ocrCandidate, setOcrCandidate] = useState(null);
   const [candidateConflict, setCandidateConflict] = useState(null); // { exif, ocr, distanceMeters }
   const [isReporting, setIsReporting] = useState(false);
-  const [newIssue, setNewIssue] = useState({
-    type: "pothole",
-    description: "",
-    image: null,
-  });
+  const [newIssue, setNewIssue] = useState({ ...INITIAL_ISSUE_STATE });
+  const [imagePreview, setImagePreview] = useState(null);
+  const imagePreviewRef = useRef(null);
+
+  const updateImagePreview = useCallback((url) => {
+    if (imagePreviewRef.current && typeof window !== "undefined" && window.URL && typeof window.URL.revokeObjectURL === "function") {
+      try {
+        window.URL.revokeObjectURL(imagePreviewRef.current);
+      } catch (_) {}
+    }
+    imagePreviewRef.current = url;
+    setImagePreview(url);
+  }, []);
+
+  const [fileInputKey, setFileInputKey] = useState(Date.now());
   
   // Request sequence ref to discard stale async responses
   const imageRequestIdRef = useRef(0);
@@ -97,10 +113,54 @@ const Dashboard = () => {
     fetchUserIssues();
   }, []);
   
+  // Reset all temporary report form data cleanly (Task 1.2)
+  const resetReportForm = useCallback(() => {
+    // 1. Invalidate any in-flight EXIF or OCR async callbacks
+    imageRequestIdRef.current++;
+
+    // 2. Revoke and clear image preview
+    updateImagePreview(null);
+
+    // 3. Clear file input element and cycle key to force clean input remount
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setFileInputKey(Date.now());
+
+    // 4. Reset newIssue object to clean initial state (description, image, default category)
+    setNewIssue({ ...INITIAL_ISSUE_STATE });
+
+    // 5. Reset all location and extraction states
+    setMarkerPosition(null);
+    setLocationSource(null);
+    setLocationFeedback(null);
+    setExifCandidate(null);
+    setOcrCandidate(null);
+    setCandidateConflict(null);
+    setExifExtracting(false);
+    setOcrExtracting(false);
+    setSubmitting(false);
+
+    // 6. Dismiss any temporary toast notifications from previous attempts
+    if (toast && typeof toast.dismiss === "function") {
+      toast.dismiss();
+    }
+  }, [updateImagePreview]);
+
+  const handleCancelReport = () => {
+    resetReportForm();
+    setIsReporting(false);
+  };
+
+  const handleOpenReport = () => {
+    resetReportForm();
+    setIsReporting(true);
+  };
+
   // Handle form input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setNewIssue({ ...newIssue, [name]: value });
+    setNewIssue((prev) => ({ ...prev, [name]: value }));
   };
 
   // Handle location selection from map click
@@ -120,7 +180,21 @@ const Dashboard = () => {
       const file = e.target.files[0];
       const currentReqId = ++imageRequestIdRef.current;
 
-      setNewIssue(prev => ({ ...prev, image: file }));
+      setNewIssue((prev) => ({ ...prev, image: file }));
+
+      // Create preview safely outside updater
+      let nextUrl = "mock-blob-url";
+      try {
+        if (typeof window !== "undefined" && window.URL && typeof window.URL.createObjectURL === "function") {
+          const generated = window.URL.createObjectURL(file);
+          if (generated) {
+            nextUrl = generated;
+          }
+        }
+      } catch (_) {
+        nextUrl = "mock-blob-url";
+      }
+      updateImagePreview(nextUrl);
 
       // Reset OCR and conflict states when image changes
       setOcrExtracting(false);
@@ -365,21 +439,8 @@ const Dashboard = () => {
         }
       });
       
-      // Reset form and extraction states
-      setNewIssue({
-        type: "pothole",
-        description: "",
-        image: null,
-      });
-      setMarkerPosition(null);
-      setLocationSource(null);
-      setLocationFeedback(null);
-      setExifCandidate(null);
-      setOcrCandidate(null);
-      setCandidateConflict(null);
-      setOcrExtracting(false);
-      setExifExtracting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      // Reset form and extraction states cleanly
+      resetReportForm();
       setIsReporting(false);
       
       // Refresh user issues
@@ -433,25 +494,16 @@ const Dashboard = () => {
         {!isReporting ? (
           <button 
             className="report-btn"
-            onClick={() => setIsReporting(true)}
+            onClick={handleOpenReport}
+            data-testid="report-new-issue-btn"
           >
             Report New Issue
           </button>
         ) : (
           <button 
             className="cancel-btn"
-            onClick={() => {
-              setIsReporting(false);
-              setMarkerPosition(null);
-              setLocationSource(null);
-              setLocationFeedback(null);
-              setExifCandidate(null);
-              setOcrCandidate(null);
-              setCandidateConflict(null);
-              setOcrExtracting(false);
-              setExifExtracting(false);
-              if (fileInputRef.current) fileInputRef.current.value = "";
-            }}
+            onClick={handleCancelReport}
+            data-testid="cancel-report-btn"
           >
             Cancel Report
           </button>
@@ -644,21 +696,24 @@ const Dashboard = () => {
               <label htmlFor="image">Upload Image (optional):</label>
               <div className="upload-controls">
                 <input
+                  key={fileInputKey}
                   type="file"
                   id="image"
                   name="image"
                   accept="image/*"
                   ref={fileInputRef}
                   onChange={handleImageChange}
+                  data-testid="image-file-input"
                 />
                 <button 
                   type="button" 
                   className="upload-btn"
-                  onClick={() => fileInputRef.current.click()}
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  data-testid="choose-file-btn"
                 >
                   Choose File
                 </button>
-                <span className="file-name">
+                <span className="file-name" data-testid="file-name">
                   {newIssue.image ? newIssue.image.name : "No file chosen"}
                 </span>
 
@@ -682,6 +737,43 @@ const Dashboard = () => {
                 )}
               </div>
 
+              {/* Instant Image Preview Thumbnail (Task 1.2) */}
+              {imagePreview && (
+                <div className="image-preview-container" data-testid="image-preview-container">
+                  <img
+                    src={imagePreview}
+                    alt="Defect Preview"
+                    className="image-preview-thumb"
+                    data-testid="image-preview-thumb"
+                  />
+                  <div className="preview-meta">
+                    <span className="preview-file-name">{newIssue.image?.name}</span>
+                    <button
+                      type="button"
+                      className="btn-remove-preview"
+                      data-testid="btn-remove-preview"
+                      onClick={() => {
+                        updateImagePreview(null);
+                        setNewIssue((prev) => ({ ...prev, image: null }));
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                        setFileInputKey(Date.now());
+                        setExifCandidate(null);
+                        setOcrCandidate(null);
+                        setCandidateConflict(null);
+                        if (locationSource === "exif" || locationSource === "ocr") {
+                          setLocationSource(null);
+                          setMarkerPosition(null);
+                          setLocationFeedback(null);
+                        }
+                      }}
+                      aria-label="Remove photo"
+                    >
+                      ✕ Remove Photo
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="detection-badges">
                 {locationSource === "exif" && (
                   <span className="exif-badge success" data-testid="exif-success-badge">
@@ -696,14 +788,25 @@ const Dashboard = () => {
               </div>
             </div>
             
-            <button
-              type="submit"
-              className="submit-btn"
-              disabled={!markerPosition || submitting}
-            >
-              {submitting && <span className="btn-spinner"></span>}
-              {submitting ? "Submitting..." : "Submit Report"}
-            </button>
+            <div className="form-actions-row">
+              <button
+                type="submit"
+                className="submit-btn"
+                disabled={!markerPosition || submitting}
+                data-testid="submit-report-btn"
+              >
+                {submitting && <span className="btn-spinner"></span>}
+                {submitting ? "Submitting..." : "Submit Report"}
+              </button>
+              <button
+                type="button"
+                className="cancel-btn form-inline-cancel-btn"
+                onClick={handleCancelReport}
+                data-testid="form-inline-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
           </form>
         </div>
       )}
