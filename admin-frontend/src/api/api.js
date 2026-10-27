@@ -81,5 +81,8 @@ export const retryNotificationEmail = (id) => API.post(`/admin-dashboard/notific
 
 export const fetchAnalytics = (params) => API.get("/admin-dashboard/analytics", { params });
 
+export const resolveClassificationReview = (id, data) =>
+  API.patch(`/admin-dashboard/issues/${id}/classification-review`, data);
+
 export default API;
 

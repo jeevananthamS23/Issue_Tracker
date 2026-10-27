@@ -34,6 +34,8 @@ jest.mock("./api/api", () => {
     markAllNotificationsRead: () => mockApi.patch("/admin-dashboard/notifications/read-all"),
     retryNotificationEmail: (id) => mockApi.post(`/admin-dashboard/notifications/${id}/retry-email`),
     fetchAnalytics: (params) => mockApi.get("/admin-dashboard/analytics", { params }),
+    resolveClassificationReview: (id, data) =>
+      mockApi.patch(`/admin-dashboard/issues/${id}/classification-review`, data),
   };
 });
 
@@ -1764,6 +1766,420 @@ describe("Admin Frontend Application Tests", () => {
 
     expect(await screen.findByTestId("analytics-empty")).toBeInTheDocument();
     expect(screen.getByText("No Civic Defect Data Available")).toBeInTheDocument();
+  });
+
+  test("37. Classification review: Confirming existing category sends 'confirmed_category' and clears review badge", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_01",
+      email: "triage.admin@civicvision.gov",
+      fullName: "Triage Officer",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000401",
+      type: "pothole",
+      description: "Severe pothole flagged for classification review",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      needsClassificationReview: true,
+      needsDuplicateReview: false,
+      needsReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    // Mock classification review resolution API
+    API.patch.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "Classification review successfully resolved as 'confirmed_category'.",
+        issue: {
+          ...mockIssue,
+          needsClassificationReview: false,
+          classificationReviewResolution: "confirmed_category",
+          needsReview: false,
+        },
+      },
+    });
+
+    render(<App />);
+
+    // 1. Confirm issue is rendered and triage badge is visible
+    expect(await screen.findByText("Severe pothole flagged for classification review")).toBeInTheDocument();
+    expect(screen.getByTitle("Pending category triage review")).toBeInTheDocument();
+
+    // 2. Open Triage modal
+    const triageBtn = screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` });
+    fireEvent.click(triageBtn);
+
+    // 3. Verify modal elements: alert banner, category selector, approve button
+    expect(await screen.findByText("Classification Triage Review Required")).toBeInTheDocument();
+    const categorySelect = screen.getByLabelText("Defect Category");
+    expect(categorySelect.value).toBe("pothole");
+
+    const approveBtn = screen.getByTestId("btn-resolve-classification");
+    expect(approveBtn).toBeInTheDocument();
+    expect(approveBtn).toHaveTextContent("Approve / Update Category");
+
+    // 4. Click Approve / Update Category
+    fireEvent.click(approveBtn);
+
+    // 5. Verify correct API payload with confirmed_category
+    await waitFor(() => {
+      expect(API.patch).toHaveBeenCalledWith(
+        `/admin-dashboard/issues/${mockIssue._id}/classification-review`,
+        expect.objectContaining({
+          action: "confirmed_category",
+          type: "pothole",
+          department: "Roads & Infrastructure",
+        })
+      );
+    });
+
+    // 6. Verify success banner and verified note appear
+    expect(
+      await screen.findByText("Classification review successfully resolved as 'confirmed_category'.")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Category verified:/i)).toBeInTheDocument();
+
+    // 7. Close modal and verify the review warning badge is removed from table
+    const closeBtn = screen.getByLabelText("Close modal");
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByTitle("Pending category triage review")).not.toBeInTheDocument();
+    });
+  });
+
+  test("38. Classification review: Changing category sends 'reclassified' and updates department auto-suggestion", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_02",
+      email: "triage.admin2@civicvision.gov",
+      fullName: "Triage Lead",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000402",
+      type: "pothole",
+      description: "Misclassified pothole that is actually garbage",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      needsClassificationReview: true,
+      needsDuplicateReview: false,
+      needsReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    API.patch.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "Classification review successfully resolved as 'reclassified'.",
+        issue: {
+          ...mockIssue,
+          type: "garbage",
+          department: "Waste Management",
+          needsClassificationReview: false,
+          classificationReviewResolution: "reclassified",
+          needsReview: false,
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Misclassified pothole that is actually garbage")).toBeInTheDocument();
+
+    // Open Triage modal
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+
+    // Change category to garbage
+    const categorySelect = await screen.findByLabelText("Defect Category");
+    fireEvent.change(categorySelect, { target: { value: "garbage" } });
+    expect(categorySelect.value).toBe("garbage");
+
+    // Department should auto-suggest Waste Management
+    const deptSelect = screen.getByLabelText("Assigned Department");
+    expect(deptSelect.value).toBe("Waste Management");
+
+    // Submit reclassification
+    const approveBtn = screen.getByTestId("btn-resolve-classification");
+    fireEvent.click(approveBtn);
+
+    // Verify PATCH was called with action: 'reclassified'
+    await waitFor(() => {
+      expect(API.patch).toHaveBeenCalledWith(
+        `/admin-dashboard/issues/${mockIssue._id}/classification-review`,
+        expect.objectContaining({
+          action: "reclassified",
+          type: "garbage",
+          department: "Waste Management",
+        })
+      );
+    });
+
+    expect(
+      await screen.findByText("Classification review successfully resolved as 'reclassified'.")
+    ).toBeInTheDocument();
+  });
+
+  test("39. Classification review: Rejects unsupported action values and ensures only confirmed_category or reclassified are sent", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_03",
+      email: "triage.admin3@civicvision.gov",
+      fullName: "Triage Inspector",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000403",
+      type: "water_leak",
+      description: "Water pipe rupture requiring review",
+      status: "reported",
+      department: "Water Services",
+      needsClassificationReview: true,
+      needsDuplicateReview: false,
+      needsReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    API.patch.mockResolvedValueOnce({
+      data: {
+        error: false,
+        message: "Resolved",
+        issue: { ...mockIssue, needsClassificationReview: false },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Water pipe rupture requiring review")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    const approveBtn = await screen.findByTestId("btn-resolve-classification");
+    fireEvent.click(approveBtn);
+
+    await waitFor(() => {
+      expect(API.patch).toHaveBeenCalled();
+    });
+
+    const patchCall = API.patch.mock.calls.find((call) =>
+      call[0].includes("classification-review")
+    );
+    expect(patchCall).toBeDefined();
+    const sentAction = patchCall[1].action;
+    expect(["confirmed_category", "reclassified"]).toContain(sentAction);
+    expect(["approved", "dismissed", "manual_override"]).not.toContain(sentAction);
+  });
+
+  test("40. Classification review: Failed API request shows error message, retains category selection, and preserves review warning", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_04",
+      email: "triage.admin4@civicvision.gov",
+      fullName: "Triage Tester",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000404",
+      type: "street_light",
+      description: "Dark street light issue pending review",
+      status: "reported",
+      department: "Street Lighting",
+      needsClassificationReview: true,
+      needsDuplicateReview: false,
+      needsReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    // Mock API failure (e.g. 500 Database Error)
+    API.patch.mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { message: "Internal Server Error: Database write failed" },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Dark street light issue pending review")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+
+    // Change category to sewage
+    const categorySelect = await screen.findByLabelText("Defect Category");
+    fireEvent.change(categorySelect, { target: { value: "sewage" } });
+    expect(categorySelect.value).toBe("sewage");
+
+    const approveBtn = screen.getByTestId("btn-resolve-classification");
+    fireEvent.click(approveBtn);
+
+    // Verify error banner is displayed
+    expect(
+      await screen.findByText("Internal Server Error: Database write failed")
+    ).toBeInTheDocument();
+
+    // Verify category selection is retained
+    expect(categorySelect.value).toBe("sewage");
+
+    // Close modal and verify the review warning badge is STILL in the table
+    const closeBtn = screen.getByLabelText("Close modal");
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Pending category triage review")).toBeInTheDocument();
+    });
+  });
+
+  test("41. Classification review: Prevents duplicate requests during submission and disables button", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_05",
+      email: "triage.admin5@civicvision.gov",
+      fullName: "Concurrency Tester",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000405",
+      type: "pothole",
+      description: "Pothole for concurrency check",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      needsClassificationReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    let resolvePromise;
+    const delayedPromise = new Promise((resolve) => {
+      resolvePromise = resolve;
+    });
+
+    API.patch.mockReturnValueOnce(delayedPromise);
+
+    render(<App />);
+
+    expect(await screen.findByText("Pothole for concurrency check")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    const approveBtn = await screen.findByTestId("btn-resolve-classification");
+
+    // Click once
+    fireEvent.click(approveBtn);
+
+    // Button should now be disabled and display loading text
+    expect(approveBtn).toBeDisabled();
+    expect(approveBtn).toHaveTextContent("Updating Category...");
+
+    // Repeated click while disabled should not trigger extra API calls
+    fireEvent.click(approveBtn);
+    expect(API.patch).toHaveBeenCalledTimes(1);
+
+    // Resolve the delayed call
+    resolvePromise({
+      data: {
+        error: false,
+        message: "Classification review resolved concurrently",
+        issue: { ...mockIssue, needsClassificationReview: false },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Classification review resolved concurrently");
+    });
+  });
+
+  test("42. Classification review: Drawer open/close and cancel behavior remains correct across success, cancellation, and failure", async () => {
+    const mockAdmin = {
+      _id: "adm_test_triage_06",
+      email: "triage.admin6@civicvision.gov",
+      fullName: "Drawer Tester",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000406",
+      type: "pothole",
+      description: "Pothole to verify drawer lifecycle",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      needsClassificationReview: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Pothole to verify drawer lifecycle")).toBeInTheDocument();
+
+    // 1. Open drawer
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // 2. Cancel / close via close button
+    const closeBtn = screen.getByLabelText("Close modal");
+    fireEvent.click(closeBtn);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // 3. Re-open drawer
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // 4. Close via backdrop overlay
+    const overlay = document.querySelector(".modal-overlay");
+    expect(overlay).toBeInTheDocument();
+    fireEvent.click(overlay);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 });
 

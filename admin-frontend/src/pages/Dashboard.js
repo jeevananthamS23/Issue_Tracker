@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAdminAuth } from "../context/AdminAuthContext";
-import API, { getImageUrl, fetchUnreadNotificationCount, fetchAnalytics } from "../api/api";
+import API, {
+  getImageUrl,
+  fetchUnreadNotificationCount,
+  fetchAnalytics,
+  resolveClassificationReview
+} from "../api/api";
 import {
   ShieldCheck,
   LogOut,
@@ -54,6 +59,33 @@ const ISSUE_TYPES = [
   "traffic signal",
   "other"
 ];
+
+const CANONICAL_CATEGORIES = [
+  { value: "pothole", label: "Pothole" },
+  { value: "road_damage", label: "Road Damage" },
+  { value: "garbage", label: "Garbage" },
+  { value: "street_light", label: "Street Light" },
+  { value: "water_leak", label: "Water Leak" },
+  { value: "sewage", label: "Sewage" },
+  { value: "traffic_signal", label: "Traffic Signal" },
+  { value: "other", label: "Other" }
+];
+
+const CATEGORY_TO_DEPARTMENT = {
+  pothole: "Roads & Infrastructure",
+  road_damage: "Roads & Infrastructure",
+  garbage: "Waste Management",
+  street_light: "Street Lighting",
+  water_leak: "Water Services",
+  sewage: "Water Services",
+  traffic_signal: "Public Works",
+  other: "Public Works"
+};
+
+function normalizeCategoryKey(cat) {
+  if (!cat || typeof cat !== "string") return "other";
+  return cat.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
 
 const REVIEW_STATUS_OPTIONS = [
   { value: "all", label: "All Review States" },
@@ -161,6 +193,8 @@ const Dashboard = () => {
     department: "",
     internalNotes: ""
   });
+  const [classificationCategory, setClassificationCategory] = useState("pothole");
+  const [submittingClassification, setSubmittingClassification] = useState(false);
 
   // Duplicate Comparison & Resolution Modal State
   const [comparisonIssue, setComparisonIssue] = useState(null);
@@ -261,6 +295,10 @@ const Dashboard = () => {
   const handleOpenDetail = (issue) => {
     setSelectedIssue(issue);
     setUpdateMessage(null);
+    setSubmittingClassification(false);
+    const norm = normalizeCategoryKey(issue.type);
+    const matched = CANONICAL_CATEGORIES.some((c) => c.value === norm) ? norm : (issue.type || "pothole");
+    setClassificationCategory(matched);
     setUpdateForm({
       status: issue.status || "reported",
       department: issue.department || "",
@@ -271,6 +309,83 @@ const Dashboard = () => {
   const handleCloseDetail = () => {
     setSelectedIssue(null);
     setUpdateMessage(null);
+    setSubmittingClassification(false);
+  };
+
+  const handleCategoryChange = (e) => {
+    const newCategory = e.target.value;
+    setClassificationCategory(newCategory);
+    const norm = normalizeCategoryKey(newCategory);
+    const suggestedDept = CATEGORY_TO_DEPARTMENT[norm];
+    if (suggestedDept) {
+      setUpdateForm((prev) => ({
+        ...prev,
+        department: suggestedDept
+      }));
+    }
+  };
+
+  // Handle classification triage review resolution (Task 1.1)
+  const handleResolveClassificationReview = async () => {
+    if (!selectedIssue || submittingClassification) return;
+
+    setSubmittingClassification(true);
+    setUpdateMessage(null);
+
+    const isSame =
+      normalizeCategoryKey(classificationCategory) === normalizeCategoryKey(selectedIssue.type);
+    const action = isSame ? "confirmed_category" : "reclassified";
+
+    const targetDept =
+      updateForm.department ||
+      CATEGORY_TO_DEPARTMENT[normalizeCategoryKey(classificationCategory)] ||
+      selectedIssue.department ||
+      "Public Works";
+
+    const payload = {
+      action,
+      type: classificationCategory,
+      department: targetDept,
+      reviewNotes: updateForm.internalNotes ? updateForm.internalNotes.trim() : undefined
+    };
+
+    try {
+      const res = await resolveClassificationReview(selectedIssue._id, payload);
+      const updatedIssue = res.data?.issue || {
+        ...selectedIssue,
+        type: classificationCategory,
+        department: targetDept,
+        needsClassificationReview: false,
+        classificationReviewResolution: action,
+        needsReview: Boolean(selectedIssue.needsDuplicateReview)
+      };
+
+      const merged = {
+        ...selectedIssue,
+        ...updatedIssue,
+        needsClassificationReview: false,
+        userId: selectedIssue.userId,
+        duplicateOf: selectedIssue.duplicateOf
+      };
+
+      setIssues((prev) => prev.map((item) => (item._id === merged._id ? merged : item)));
+      setSelectedIssue(merged);
+      setUpdateMessage({
+        type: "success",
+        text:
+          res.data?.message ||
+          `Classification review successfully resolved as '${action}'.`
+      });
+    } catch (err) {
+      setUpdateMessage({
+        type: "error",
+        text:
+          err.response?.data?.message ||
+          "Failed to resolve classification review. Please try again."
+      });
+    } finally {
+      setSubmittingClassification(false);
+    }
   };
 
   // Handle issue status and department update
@@ -1588,6 +1703,23 @@ const Dashboard = () => {
                 </div>
               )}
 
+              {/* Classification Review alert banner in detail modal */}
+              {selectedIssue.needsClassificationReview && (
+                <div className="classification-alert-banner" role="region" aria-label="Classification Review Alert">
+                  <div className="classification-alert-left">
+                    <AlertTriangle size={20} className="classification-alert-icon" />
+                    <div>
+                      <span className="classification-alert-title">
+                        Classification Triage Review Required
+                      </span>
+                      <p className="classification-alert-p">
+                        This defect report is flagged for category verification. Verify or reclassify the defect category below and click Approve / Update Category.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="modal-grid">
                 {/* Left side: Issue Info and Media */}
                 <div className="modal-left-col">
@@ -1696,6 +1828,71 @@ const Dashboard = () => {
                   </h3>
 
                   <form onSubmit={handleUpdateSubmit} className="triage-form">
+                    {/* Defect Category & Triage Classification Review */}
+                    <div className="form-group classification-group">
+                      <div className="classification-label-row">
+                        <label htmlFor="update-category">Defect Category</label>
+                        {selectedIssue.needsClassificationReview && (
+                          <span className="badge-triage-review-inline" title="Pending category triage review">
+                            <AlertTriangle size={12} /> Triage Review Pending
+                          </span>
+                        )}
+                      </div>
+                      <select
+                        id="update-category"
+                        aria-label="Defect Category"
+                        value={classificationCategory}
+                        onChange={handleCategoryChange}
+                        disabled={submittingClassification}
+                      >
+                        {CANONICAL_CATEGORIES.map((cat) => (
+                          <option key={cat.value} value={cat.value}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      {selectedIssue.needsClassificationReview ? (
+                        <div className="classification-action-card">
+                          <div className="classification-action-status">
+                            <span className="classification-status-note">
+                              {normalizeCategoryKey(classificationCategory) === normalizeCategoryKey(selectedIssue.type)
+                                ? "Matches reported category (will confirm existing category)."
+                                : `Changed from '${selectedIssue.type}' to '${classificationCategory}' (will reclassify).`}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            id="btn-approve-update-category"
+                            data-testid="btn-resolve-classification"
+                            className="btn-resolve-classification"
+                            onClick={handleResolveClassificationReview}
+                            disabled={submittingClassification || updating}
+                            aria-busy={submittingClassification}
+                          >
+                            {submittingClassification ? (
+                              <>
+                                <span className="spinner-sm" aria-hidden="true" />
+                                <span>Updating Category...</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 size={16} />
+                                <span>Approve / Update Category</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="classification-action-card verified">
+                          <span className="classification-verified-note">
+                            <CheckCircle2 size={14} className="icon-verified" /> Category verified:{" "}
+                            <strong>{selectedIssue.classificationReviewResolution || "confirmed"}</strong>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="form-group">
                       <label htmlFor="update-status">Remediation Status</label>
                       <select
