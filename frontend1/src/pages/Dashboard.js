@@ -21,7 +21,10 @@ import {
   Layers,
   ChevronRight,
   ChevronLeft,
-  MapPin
+  MapPin,
+  CameraOff,
+  Droplets,
+  Sparkles
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -73,7 +76,35 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [failedImages, setFailedImages] = useState(new Set());
   const PAGE_SIZE = 10;
+
+  // Category Icon helper for issue cards and map popups
+  const getCategoryIcon = (type) => {
+    const t = (type || "").toLowerCase();
+    if (t.includes("pothole") || t.includes("road")) {
+      return <AlertTriangle size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("light")) {
+      return <Sparkles size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("water") || t.includes("drain") || t.includes("leak") || t.includes("pump")) {
+      return <Droplets size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("garbage") || t.includes("waste") || t.includes("sanitat")) {
+      return <Layers size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    return <CameraOff size={24} className="fallback-icon" aria-hidden="true" />;
+  };
+
+  const getCategoryLabel = (type) => {
+    const t = (type || "").toLowerCase();
+    if (t.includes("pothole") || t.includes("road")) return "Road Hazard";
+    if (t.includes("light")) return "Streetlight Malfunction";
+    if (t.includes("water") || t.includes("drain") || t.includes("leak") || t.includes("pump")) return "Water & Drainage";
+    if (t.includes("garbage") || t.includes("waste") || t.includes("sanitat")) return "Sanitation Defect";
+    return type || "Civic Defect";
+  };
   
   // State for creating new issue
   const [markerPosition, setMarkerPosition] = useState(null);
@@ -671,7 +702,8 @@ const Dashboard = () => {
           </div>
           <div className="metric-content">
             <span className="metric-value">{metrics.votes}</span>
-            <span className="metric-label">Community Votes</span>
+            <span className="metric-label">Total Upvotes Received</span>
+            <span className="metric-subtext">Across your {metrics.total} reported issues</span>
           </div>
         </div>
       </div>
@@ -1286,19 +1318,31 @@ const Dashboard = () => {
                     
                     <p className="description">{issue.description}</p>
                     
-                    {issue.imageUrl && (
+                    {issue.imageUrl && !failedImages.has(issue._id) ? (
                       <div className="issue-image-container">
                         <img 
                           src={getImageUrl(issue.imageUrl)}
                           alt={issue.type} 
                           className="issue-image"
                           loading="lazy"
+                          onError={() => setFailedImages((prev) => new Set([...prev, issue._id]))}
                         />
+                      </div>
+                    ) : (
+                      <div className="issue-image-container fallback" aria-label={`No field photo attached for ${issue.type}`}>
+                        <div className="issue-image-fallback">
+                          {getCategoryIcon(issue.type)}
+                          <span className="fallback-label">{getCategoryLabel(issue.type)}</span>
+                          <span className="fallback-hint">No photo attached</span>
+                        </div>
                       </div>
                     )}
                     
                     <div className="issue-footer">
-                      <span className="votes">Votes: {issue.votes}</span>
+                      <span className="votes" title={`${issue.votes ?? 0} community validations for this report`}>
+                        <ThumbsUp size={12} className="vote-inline-icon" aria-hidden="true" />
+                        <span>{issue.votes ?? 0} {issue.votes === 1 ? "vote" : "votes"}</span>
+                      </span>
                       <span className="date">
                         {new Date(issue.createdAt).toLocaleDateString()}
                       </span>
@@ -1380,18 +1424,27 @@ const Dashboard = () => {
                     <div className="issue-popup">
                       <h3>{issue.type}</h3>
                       <p>{issue.description}</p>
-                      {issue.imageUrl && (
+                      {issue.imageUrl && !failedImages.has(issue._id) ? (
                          <img 
                            src={getImageUrl(issue.imageUrl)}
                            alt={issue.type} 
                            className="issue-image"
+                           onError={() => setFailedImages((prev) => new Set([...prev, issue._id]))}
                          />
+                      ) : (
+                        <div className="popup-image-fallback" aria-label={`No photo for ${issue.type}`}>
+                          {getCategoryIcon(issue.type)}
+                          <span>{getCategoryLabel(issue.type)}</span>
+                        </div>
                       )}
                       <div className="issue-details">
                         <span className={`status-badge ${issue.status}`}>
                           {issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
                         </span>
-                        <span className="votes">Votes: {issue.votes}</span>
+                        <span className="votes" title={`${issue.votes ?? 0} community validations for this report`}>
+                          <ThumbsUp size={12} className="vote-inline-icon" aria-hidden="true" />
+                          <span>{issue.votes ?? 0} {issue.votes === 1 ? "vote" : "votes"}</span>
+                        </span>
                       </div>
                       <p className="date">Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
                     </div>

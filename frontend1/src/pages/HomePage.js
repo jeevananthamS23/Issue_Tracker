@@ -14,7 +14,10 @@ import {
   Layers,
   Sparkles,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle,
+  CameraOff,
+  Droplets
 } from "lucide-react";
 import API, { Auth, VoteService, getImageUrl } from "../api/api";
 import "leaflet/dist/leaflet.css";
@@ -61,6 +64,34 @@ const HomePage = () => {
   const [votedIssues, setVotedIssues] = useState(new Set());
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'reported' | 'in-progress' | 'resolved'
+  const [failedImages, setFailedImages] = useState(new Set());
+
+  // Category Icon helper for issue cards and map popups
+  const getCategoryIcon = (type) => {
+    const t = (type || "").toLowerCase();
+    if (t.includes("pothole") || t.includes("road")) {
+      return <AlertTriangle size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("light")) {
+      return <Sparkles size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("water") || t.includes("drain") || t.includes("leak") || t.includes("pump")) {
+      return <Droplets size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    if (t.includes("garbage") || t.includes("waste") || t.includes("sanitat")) {
+      return <Layers size={24} className="fallback-icon" aria-hidden="true" />;
+    }
+    return <CameraOff size={24} className="fallback-icon" aria-hidden="true" />;
+  };
+
+  const getCategoryLabel = (type) => {
+    const t = (type || "").toLowerCase();
+    if (t.includes("pothole") || t.includes("road")) return "Road Hazard";
+    if (t.includes("light")) return "Streetlight Malfunction";
+    if (t.includes("water") || t.includes("drain") || t.includes("leak") || t.includes("pump")) return "Water & Drainage";
+    if (t.includes("garbage") || t.includes("waste") || t.includes("sanitat")) return "Sanitation Defect";
+    return type || "Civic Defect";
+  };
 
   // Default map center (Erode City reference coordinates)
   const defaultCenter = [11.342423, 77.728165];
@@ -351,13 +382,19 @@ const HomePage = () => {
 
                         <p className="popup-description">{issue.description}</p>
 
-                        {issue.imageUrl && (
+                        {issue.imageUrl && !failedImages.has(issue._id) ? (
                           <img
                             src={getImageUrl(issue.imageUrl)}
                             alt={issue.type}
                             className="popup-image"
                             loading="lazy"
+                            onError={() => setFailedImages((prev) => new Set([...prev, issue._id]))}
                           />
+                        ) : (
+                          <div className="popup-image-fallback" aria-label={`No photo for ${issue.type}`}>
+                            {getCategoryIcon(issue.type)}
+                            <span>{getCategoryLabel(issue.type)}</span>
+                          </div>
                         )}
 
                         <div className="popup-footer">
@@ -437,7 +474,39 @@ const HomePage = () => {
         </div>
 
         {loading ? (
-          <div className="feed-loading">Loading recent community reports...</div>
+          <>
+            <div className="sr-only" role="status" aria-live="polite">
+              Loading recent community reports...
+            </div>
+            <div className="issue-feed-grid skeleton-grid" aria-hidden="true">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="feed-card skeleton-card">
+                  <div className="feed-card-header">
+                    <div className="skeleton-pill shimmer" />
+                    <div className="skeleton-date shimmer" />
+                  </div>
+                  <div className="skeleton-title shimmer" />
+                  <div className="skeleton-desc shimmer" />
+                  <div className="skeleton-desc-short shimmer" />
+                  <div className="skeleton-image shimmer" />
+                  <div className="feed-card-footer">
+                    <div className="skeleton-coords shimmer" />
+                    <div className="skeleton-btn shimmer" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : error ? (
+          <div className="feed-error-state" role="alert">
+            <AlertCircle size={32} className="error-icon" aria-hidden="true" />
+            <p className="error-title">Unable to Load Community Reports</p>
+            <p className="error-subtext">{error}</p>
+            <button type="button" className="retry-btn" onClick={fetchIssues}>
+              <RefreshCw size={14} aria-hidden="true" />
+              <span>Retry Loading</span>
+            </button>
+          </div>
         ) : filteredIssues.length === 0 ? (
           <div className="feed-empty-state">
             <Layers size={36} className="empty-icon" />
@@ -463,14 +532,23 @@ const HomePage = () => {
                 <h3 className="feed-card-type">{issue.type}</h3>
                 <p className="feed-card-desc">{issue.description}</p>
 
-                {issue.imageUrl && (
+                {issue.imageUrl && !failedImages.has(issue._id) ? (
                   <div className="feed-card-img-wrap">
                     <img
                       src={getImageUrl(issue.imageUrl)}
                       alt={issue.type}
                       className="feed-card-img"
                       loading="lazy"
+                      onError={() => setFailedImages((prev) => new Set([...prev, issue._id]))}
                     />
+                  </div>
+                ) : (
+                  <div className="feed-card-img-wrap fallback-wrap" aria-label={`No photo attached for ${issue.type}`}>
+                    <div className="fallback-content">
+                      {getCategoryIcon(issue.type)}
+                      <span className="fallback-text">{getCategoryLabel(issue.type)}</span>
+                      <span className="fallback-subtext">No field photo attached</span>
+                    </div>
                   </div>
                 )}
 

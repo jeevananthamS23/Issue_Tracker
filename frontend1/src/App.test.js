@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 
 test('renders community issue reporter logo or title', () => {
@@ -23,4 +23,13 @@ test('renders CivicVision AI branding and primary navigation', () => {
   expect(mobileToggle).toBeInTheDocument();
   expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
   expect(mobileToggle).toHaveAttribute('aria-controls', 'primary-nav-links');
+});
+
+test('renders accessible loading skeleton state with screen reader announcement', () => {
+  render(<App />);
+
+  // Screen reader accessible loading announcement
+  const loadingStatus = screen.getByRole('status');
+  expect(loadingStatus).toBeInTheDocument();
+  expect(loadingStatus).toHaveTextContent(/Loading recent community reports/i);
 });

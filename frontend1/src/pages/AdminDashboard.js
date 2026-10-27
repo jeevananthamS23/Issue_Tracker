@@ -64,7 +64,7 @@ const MapView = ({ center, issues, selectedIssue, setSelectedIssue, getStatusIco
                 <span className={`status-badge ${issue.status}`}>
                   {issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
                 </span>
-                <span className="votes">Votes: {issue.votes}</span>
+                <span className="votes">Votes: {issue.votes || 0}</span>
               </div>
               <p className="date">Reported on: {new Date(issue.createdAt).toLocaleDateString()}</p>
             </div>
@@ -425,7 +425,7 @@ const handleUpdateSubmit = async (e) => {
                       </td>
                       <td>{issue.department || "Unassigned"}</td>
                       <td>{new Date(issue.createdAt).toLocaleDateString()}</td>
-                      <td>{issue.votes}</td>
+                      <td>{issue.votes || 0}</td>
                       <td>
                         <button 
                           className="view-btn"
@@ -467,7 +467,7 @@ const handleUpdateSubmit = async (e) => {
                     <p><strong>Email:</strong> {selectedIssue.userId?.email || "N/A"}</p>
                     <p><strong>Location:</strong> Lat: {selectedIssue.location.lat.toFixed(6)}, Lng: {selectedIssue.location.lng.toFixed(6)}</p>
                     <p><strong>Reported on:</strong> {new Date(selectedIssue.createdAt).toLocaleString()}</p>
-                    <p><strong>Votes:</strong> {selectedIssue.votes}</p>
+                    <p><strong>Votes:</strong> {selectedIssue.votes || 0}</p>
                     <p><strong>Status:</strong> {selectedIssue.status}</p>
                     <p><strong>Department:</strong> {selectedIssue.department || "Unassigned"}</p>
                   </div>
