@@ -1,103 +1,294 @@
+/* ==========================================================================
+   CivicVision AI - Global Navigation Bar (Slate & Paper Design System)
+   ========================================================================== */
+
+.navbar-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background-color: var(--civic-navy-900, #0f172a);
+  border-bottom: 1px solid var(--civic-navy-800, #1e293b);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 .navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.875rem 1.75rem;
-  background: var(--civic-navy-900, #0f172a);
-  border-bottom: 1px solid var(--civic-navy-800, #1e293b);
-  color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  transition: all 0.2s ease;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0.75rem 1.5rem;
+  color: #ffffff;
+  position: relative;
 }
 
-.navbar-logo a {
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+/* --------------------------------------------------------------------------
+   Brand Identity & Wordmark
+   -------------------------------------------------------------------------- */
+.navbar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  transition: opacity 0.2s ease;
 }
 
-.navbar-logo a:hover {
-  opacity: 0.9;
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #ffffff;
+  border-radius: var(--civic-radius-sm, 6px);
+  padding: 4px 6px;
+  transition: opacity var(--civic-transition, 0.15s ease);
 }
 
+.brand-link:hover {
+  opacity: 0.92;
+}
+
+.brand-link:focus-visible {
+  outline: 2px solid var(--civic-focus, #1d4ed8);
+  outline-offset: 3px;
+}
+
+.brand-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(29, 78, 216, 0.25) 0%, rgba(30, 64, 175, 0.4) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.brand-shield {
+  color: #93c5fd;
+}
+
+.brand-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.brand-badge-ai {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: var(--civic-blue-700, #1d4ed8);
+  color: #ffffff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.brand-subtext {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+/* --------------------------------------------------------------------------
+   Desktop Navigation Links
+   -------------------------------------------------------------------------- */
 .navbar-links {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #cbd5e1;
   text-decoration: none;
-  font-size: 0.9375rem;
+  font-size: 0.92rem;
   font-weight: 500;
-  padding: 8px 12px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  padding: 8px 14px;
+  border-radius: var(--civic-radius-sm, 6px);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--civic-transition, 0.15s ease);
+  min-height: 40px;
+  box-sizing: border-box;
 }
 
 .nav-link:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
-.nav-button {
-  padding: 8px 16px;
-  background: var(--civic-blue-700, #1d4ed8);
+.nav-link:focus-visible {
+  outline: 2px solid var(--civic-focus, #1d4ed8);
+  outline-offset: 2px;
+}
+
+.nav-link.active {
   color: #ffffff;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.875rem;
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
   font-weight: 600;
-  text-decoration: none;
+}
+
+/* Report Action Link (Distinct primary accent) */
+.nav-link.report-action-link {
+  color: #93c5fd;
+  background-color: rgba(29, 78, 216, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.25);
+  font-weight: 600;
+}
+
+.nav-link.report-action-link:hover {
+  color: #ffffff;
+  background-color: var(--civic-blue-700, #1d4ed8);
+  border-color: var(--civic-blue-800, #1e40af);
+}
+
+/* Action Buttons */
+.nav-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
-  transition: all 0.2s ease;
+  gap: 6px;
+  padding: 8px 18px;
+  min-height: 40px;
+  border-radius: var(--civic-radius, 8px);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--civic-transition, 0.15s ease);
+  box-sizing: border-box;
 }
 
-.nav-button:hover {
-  background: var(--civic-blue-800, #1e40af);
-  box-shadow: 0 2px 6px rgba(29, 78, 216, 0.3);
+.nav-button:focus-visible {
+  outline: 2px solid var(--civic-focus, #1d4ed8);
+  outline-offset: 2px;
 }
 
-.nav-button:active {
-  transform: translateY(1px);
+.login-btn {
+  background-color: var(--civic-blue-700, #1d4ed8);
+  color: #ffffff;
+  border: 1px solid var(--civic-blue-800, #1e40af);
 }
 
+.login-btn:hover {
+  background-color: var(--civic-blue-800, #1e40af);
+  box-shadow: 0 2px 4px rgba(29, 78, 216, 0.25);
+}
+
+.logout-btn {
+  background-color: transparent;
+  color: #cbd5e1;
+  border: 1px solid var(--civic-navy-700, #334155);
+}
+
+.logout-btn:hover {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* --------------------------------------------------------------------------
+   Mobile Hamburger Toggle (Hidden on Desktop)
+   -------------------------------------------------------------------------- */
+.mobile-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 1px solid var(--civic-navy-700, #334155);
+  border-radius: var(--civic-radius-sm, 6px);
+  color: #ffffff;
+  cursor: pointer;
+  padding: 8px;
+  transition: all var(--civic-transition, 0.15s ease);
+}
+
+.mobile-menu-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-menu-toggle:focus-visible {
+  outline: 2px solid var(--civic-focus, #1d4ed8);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive Mobile Navigation Drawer (<= 768px)
+   -------------------------------------------------------------------------- */
 @media (max-width: 768px) {
   .navbar {
-    padding: 0.875rem 1rem;
+    padding: 0.625rem 1rem;
+  }
+
+  .mobile-menu-toggle {
+    display: flex;
+  }
+
+  .navbar-links {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--civic-navy-900, #0f172a);
+    border-bottom: 2px solid var(--civic-navy-800, #1e293b);
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
+    padding: 1rem;
+    gap: 10px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    display: none;
   }
-  .navbar-logo {
-    text-align: center;
+
+  .navbar-links.mobile-open {
+    display: flex;
+    animation: navSlideDown 0.2s ease-out forwards;
   }
-  .navbar-links {
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 8px;
+
+  @keyframes navSlideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
-  .nav-link {
-    padding: 8px 10px;
-    font-size: 0.875rem;
-  }
+
+  .nav-link,
   .nav-button {
     width: 100%;
-    min-height: 44px;
+    min-height: 46px;
+    font-size: 0.95rem;
+    justify-content: flex-start;
+    padding: 10px 16px;
   }
-}
+
+  .nav-button {
+    justify-content: center;
+    margin-top: 4px;
+  }
+
+  .brand-subtext {
+    display: none;
+  }
+}

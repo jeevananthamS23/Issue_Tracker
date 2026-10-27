@@ -18,7 +18,10 @@ import {
   Plus,
   X,
   ShieldCheck,
-  Layers
+  Layers,
+  ChevronRight,
+  ChevronLeft,
+  MapPin
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -86,6 +89,10 @@ const Dashboard = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const imagePreviewRef = useRef(null);
 
+  // Three-Step Citizen Reporting Wizard State (Task 2.2)
+  const [wizardStep, setWizardStep] = useState(1); // 1: Describe | 2: Photo & Location | 3: Review & Submit
+  const [stepValidationError, setStepValidationError] = useState("");
+
   const updateImagePreview = useCallback((url) => {
     if (imagePreviewRef.current && typeof window !== "undefined" && window.URL && typeof window.URL.revokeObjectURL === "function") {
       try {
@@ -137,8 +144,14 @@ const Dashboard = () => {
   useEffect(() => {
     fetchUserIssues();
   }, [fetchUserIssues]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location && window.location.search && window.location.search.includes("report=true")) {
+      setIsReporting(true);
+    }
+  }, []);
   
-  // Reset all temporary report form data cleanly (Task 1.2)
+  // Reset all temporary report form data cleanly (Task 1.2 & Task 2.2)
   const resetReportForm = useCallback(() => {
     // 1. Invalidate any in-flight EXIF or OCR async callbacks
     imageRequestIdRef.current++;
@@ -166,7 +179,11 @@ const Dashboard = () => {
     setOcrExtracting(false);
     setSubmitting(false);
 
-    // 6. Dismiss any temporary toast notifications from previous attempts
+    // 6. Reset wizard step and validation errors (Task 2.2)
+    setWizardStep(1);
+    setStepValidationError("");
+
+    // 7. Dismiss any temporary toast notifications from previous attempts
     if (toast && typeof toast.dismiss === "function") {
       toast.dismiss();
     }
@@ -182,10 +199,63 @@ const Dashboard = () => {
     setIsReporting(true);
   };
 
+  // Wizard navigation & validation handlers (Task 2.2)
+  const validateStep1 = useCallback(() => {
+    if (!newIssue.type) {
+      setStepValidationError("Please select an issue type.");
+      return false;
+    }
+    if (!newIssue.description || !newIssue.description.trim()) {
+      setStepValidationError("Please provide a description of the issue.");
+      return false;
+    }
+    setStepValidationError("");
+    return true;
+  }, [newIssue.type, newIssue.description]);
+
+  const handleNextFromStep1 = () => {
+    if (validateStep1()) {
+      setWizardStep(2);
+    }
+  };
+
+  const validateStep2 = useCallback(() => {
+    if (!markerPosition) {
+      setStepValidationError("Please select an incident location on the map or upload a geotagged photo.");
+      return false;
+    }
+    setStepValidationError("");
+    return true;
+  }, [markerPosition]);
+
+  const handleNextFromStep2 = () => {
+    if (validateStep2()) {
+      setWizardStep(3);
+    }
+  };
+
+  const handleStepClick = (targetStep) => {
+    if (targetStep === 1) {
+      setStepValidationError("");
+      setWizardStep(1);
+    } else if (targetStep === 2) {
+      if (validateStep1()) {
+        setWizardStep(2);
+      }
+    } else if (targetStep === 3) {
+      if (validateStep1() && validateStep2()) {
+        setWizardStep(3);
+      }
+    }
+  };
+
   // Handle form input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setNewIssue((prev) => ({ ...prev, [name]: value }));
+    if (stepValidationError) {
+      setStepValidationError("");
+    }
   };
 
   // Handle location selection from map click
@@ -193,6 +263,9 @@ const Dashboard = () => {
     setMarkerPosition(coords);
     setLocationSource(source);
     setCandidateConflict(null);
+    if (stepValidationError) {
+      setStepValidationError("");
+    }
     setLocationFeedback({
       type: "manual",
       message: `📍 Location placed manually on map: ${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}. Click anywhere on the map to adjust.`
@@ -416,7 +489,16 @@ const Dashboard = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (!newIssue.description || !newIssue.description.trim()) {
+      setStepValidationError("Please provide an issue description.");
+      setWizardStep(1);
+      toast.warn("Please enter a description.");
+      return;
+    }
+
     if (!markerPosition) {
+      setStepValidationError("Please select an incident location on the map.");
+      setWizardStep(2);
       toast.warn("Please select a location on the map.");
       return;
     }
@@ -598,304 +680,526 @@ const Dashboard = () => {
         <div className="report-form-container">
           <div className="report-form-header">
             <div className="report-form-title-group">
-              <span className="form-step-tag">Incident Intake</span>
+              <span className="form-step-tag">Step {wizardStep} of 3</span>
               <h2>Report a Community Issue</h2>
               <p className="report-form-subtitle">
-                Pinpoint the incident on the map or upload a geotagged photo for automated verification.
+                Complete the three steps below to verify and dispatch this incident to municipal response teams.
               </p>
             </div>
           </div>
 
-          <div className="map-instructions">
-            <p>Select the issue location on the map (or upload a geotagged photo):</p>
-            {exifExtracting && (
-              <div className="location-banner analyzing" data-testid="exif-analyzing">
-                <span>🔍 Reading photo metadata for EXIF GPS coordinates...</span>
-              </div>
-            )}
-            {ocrExtracting && (
-              <div className="location-banner analyzing" data-testid="ocr-analyzing">
-                <span>🔍 Scanning photo watermark text for GPS coordinates (OCR)...</span>
-              </div>
-            )}
-            {locationFeedback && (
-              <div className={`location-banner ${locationFeedback.type}`} data-testid="location-feedback-banner">
-                <span className="feedback-text">{locationFeedback.message}</span>
-                {locationSource === "exif" && (
-                  <span className="source-tag exif-tag">Photo EXIF GPS</span>
-                )}
-                {locationSource === "ocr" && (
-                  <span className="source-tag ocr-tag">Photo Watermark OCR</span>
-                )}
-                {locationSource === "manual" && (
-                  <span className="source-tag manual-tag">Manual Pin</span>
-                )}
-              </div>
-            )}
-            {!markerPosition && !locationFeedback && !exifExtracting && !ocrExtracting && (
-              <div className="location-banner empty" data-testid="location-empty-banner">
-                <span>⚠️ No location selected yet. Click on the map to place a pin, or upload a photo containing EXIF GPS or watermark.</span>
-              </div>
-            )}
-          </div>
-          
-          <div className="map-container">
-            <MapContainer 
-              center={defaultCenter} 
-              zoom={13} 
-              style={{ height: "380px", width: "100%" }}
+          {/* Wizard Step Progress Indicator (Task 2.2) */}
+          <div className="wizard-stepper" data-testid="wizard-step-indicator" role="navigation" aria-label="Issue Reporting Progress">
+            <button
+              type="button"
+              className={`step-node ${wizardStep === 1 ? "active" : wizardStep > 1 ? "completed" : ""}`}
+              onClick={() => handleStepClick(1)}
+              aria-current={wizardStep === 1 ? "step" : undefined}
+              aria-label="Step 1: Describe"
+              data-testid="wizard-step-1-indicator"
             >
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              />
-              
-              <AddMarkerOnClick onLocationSelect={handleLocationSelect} />
-              <MapViewUpdater position={markerPosition} />
-              
-              {markerPosition && (
-                <Marker position={markerPosition}>
-                  <Popup>
-                    <div>
-                      <strong>Incident Location</strong><br />
-                      Lat: {markerPosition[0].toFixed(5)}, Lng: {markerPosition[1].toFixed(5)}<br />
-                      <em>Source: {
-                        locationSource === "exif" ? "Photo EXIF GPS" :
-                        locationSource === "ocr" ? "Photo Watermark OCR" :
-                        "Manual Pin"
-                      }</em>
-                    </div>
-                  </Popup>
-                </Marker>
-              )}
-            </MapContainer>
+              <span className="step-number">{wizardStep > 1 ? "✓" : "1"}</span>
+              <span className="step-label">Describe</span>
+            </button>
+            <div className={`step-connector ${wizardStep >= 2 ? "active" : ""}`} />
+            <button
+              type="button"
+              className={`step-node ${wizardStep === 2 ? "active" : wizardStep > 2 ? "completed" : ""}`}
+              onClick={() => handleStepClick(2)}
+              aria-current={wizardStep === 2 ? "step" : undefined}
+              aria-label="Step 2: Photo and Location"
+              data-testid="wizard-step-2-indicator"
+            >
+              <span className="step-number">{wizardStep > 2 ? "✓" : "2"}</span>
+              <span className="step-label">Photo & Location</span>
+            </button>
+            <div className={`step-connector ${wizardStep >= 3 ? "active" : ""}`} />
+            <button
+              type="button"
+              className={`step-node ${wizardStep === 3 ? "active" : ""}`}
+              onClick={() => handleStepClick(3)}
+              aria-current={wizardStep === 3 ? "step" : undefined}
+              aria-label="Step 3: Review and Submit"
+              data-testid="wizard-step-3-indicator"
+            >
+              <span className="step-number">3</span>
+              <span className="step-label">Review & Submit</span>
+            </button>
           </div>
 
-          {candidateConflict && (
-            <div className="conflict-card" data-testid="coordinate-conflict-card">
-              <div className="conflict-header">
-                <span className="conflict-icon">⚠️</span>
-                <h4>Location Discrepancy Detected</h4>
-              </div>
-              <p className="conflict-desc">
-                Photo EXIF metadata and visible watermark text indicate different locations ({formatDistance(candidateConflict.distanceMeters)} apart). Please select the authoritative incident coordinates:
-              </p>
-              <div className="conflict-options">
-                <button
-                  type="button"
-                  className={`candidate-btn ${locationSource === "exif" ? "active" : ""}`}
-                  onClick={() => handleSelectCandidate("exif")}
-                  data-testid="choose-exif-btn"
-                >
-                  <span className="candidate-title">📷 Photo EXIF GPS</span>
-                  <span className="candidate-coords">
-                    {formatCoordinates(candidateConflict.exif.lat, candidateConflict.exif.lng)}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={`candidate-btn ${locationSource === "ocr" ? "active" : ""}`}
-                  onClick={() => handleSelectCandidate("ocr")}
-                  data-testid="choose-ocr-btn"
-                >
-                  <span className="candidate-title">🔍 Watermark OCR</span>
-                  <span className="candidate-coords">
-                    {formatCoordinates(candidateConflict.ocr.lat, candidateConflict.ocr.lng)}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={`candidate-btn manual ${locationSource === "manual" ? "active" : ""}`}
-                  onClick={() => handleSelectCandidate("manual")}
-                  data-testid="choose-manual-btn"
-                >
-                  <span className="candidate-title">📍 Pin on Map Manually</span>
-                  <span className="candidate-coords">Click anywhere on the map</span>
-                </button>
-              </div>
-            </div>
-          )}
-          
           <form onSubmit={handleSubmit} className="report-form" data-testid="report-form">
-            <div className="form-group">
-              <label htmlFor="type">Issue Type:</label>
-              <select
-                id="type"
-                name="type"
-                value={newIssue.type}
-                onChange={handleChange}
-                required
-              >
-                <option value="">-- Select Issue Type --</option>
-                <optgroup label="Village Issues">
-                  <option value="unpaved-road">Unpaved Road</option>
-                  <option value="no-drainage">No Drainage System</option>
-                  <option value="electricity-outage">Electricity Outage</option>
-                  <option value="low-voltage">Low Voltage</option>
-                  <option value="water-scarcity">Water Scarcity</option>
-                  <option value="open-defecation">Open Defecation</option>
-                  <option value="animal-problem">Stray Animals</option>
-                  <option value="damaged-borewell">Damaged Borewell</option>
-                  <option value="lack-of-toilets">Lack of Toilets</option>
-                  <option value="unclean-handpumps">Unclean Hand Pumps</option>
-                  <option value="school-infra">Poor School Infrastructure</option>
-                  <option value="no-medical-center">No Primary Medical Center</option>
-                  <option value="poor-connectivity">Poor Mobile Network</option>
-                </optgroup>
-                <optgroup label="City Issues">
-                  <option value="pothole">Pothole</option>
-                  <option value="street-light">Street Light Out</option>
-                  <option value="graffiti">Graffiti</option>
-                  <option value="trash">Trash/Debris</option>
-                  <option value="water-leak">Water Leak</option>
-                  <option value="road-damage">Road Damage</option>
-                  <option value="sewage">Sewage Overflow</option>
-                  <option value="illegal-dumping">Illegal Dumping</option>
-                  <option value="abandoned-vehicle">Abandoned Vehicle</option>
-                  <option value="noise">Noise Complaint</option>
-                  <option value="construction-waste">Construction Waste</option>
-                  <option value="traffic-signal">Broken Traffic Signal</option>
-                  <option value="encroachment">Footpath Encroachment</option>
-                  <option value="overflowing-dustbin">Overflowing Dustbin</option>
-                </optgroup>
-                <optgroup label="Shared/Common Issues">
-                  <option value="blocked-drain">Blocked Drainage</option>
-                  <option value="sanitation">Poor Sanitation</option>
-                  <option value="foul-smell">Foul Smell/Dead Animal</option>
-                  <option value="drinking-water">Contaminated Drinking Water</option>
-                  <option value="school-issues">School Facility Issue</option>
-                  <option value="healthcare">Lack of Healthcare Access</option>
-                  <option value="other">Other</option>
-                </optgroup>
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="description">Description:</label>
-              <textarea
-                id="description"
-                name="description"
-                value={newIssue.description}
-                onChange={handleChange}
-                placeholder="Describe the issue, landmarks, and severity in detail..."
-                required
-              ></textarea>
-            </div>
-            
-            <div className="form-group image-upload-group">
-              <label htmlFor="image">Upload Image (optional):</label>
-              <div className="upload-controls">
-                <input
-                  key={fileInputKey}
-                  type="file"
-                  id="image"
-                  name="image"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={handleImageChange}
-                  data-testid="image-file-input"
-                />
-                <button 
-                  type="button" 
-                  className="upload-btn"
-                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                  data-testid="choose-file-btn"
-                >
-                  <Camera size={16} /> Choose File
-                </button>
-                <span className="file-name" data-testid="file-name">
-                  {newIssue.image ? newIssue.image.name : "No file chosen"}
-                </span>
-
-                {newIssue.image && (
-                  <button
-                    type="button"
-                    className="detect-ocr-btn"
-                    onClick={handleDetectOcr}
-                    disabled={ocrExtracting}
-                    data-testid="detect-ocr-btn"
-                  >
-                    {ocrExtracting ? (
-                      <>
-                        <span className="btn-spinner mini"></span>
-                        Scanning photo text...
-                      </>
-                    ) : (
-                      "🔍 Detect coordinates from photo"
-                    )}
-                  </button>
-                )}
+            {/* STEP 1: Describe the Issue */}
+            <div 
+              className={`wizard-step-panel step-1 ${wizardStep === 1 ? "active" : "step-hidden"}`}
+              data-testid="wizard-step-1"
+            >
+              <div className="step-panel-header">
+                <h3>Step 1: Describe the Issue</h3>
+                <p>Select the municipal issue category and describe the defect in detail.</p>
               </div>
 
-              {/* Instant Image Preview Thumbnail */}
-              {imagePreview && (
-                <div className="image-preview-container" data-testid="image-preview-container">
-                  <img
-                    src={imagePreview}
-                    alt="Defect Preview"
-                    className="image-preview-thumb"
-                    data-testid="image-preview-thumb"
+              {stepValidationError && wizardStep === 1 && (
+                <div className="step-validation-error" data-testid="step-1-validation-error" role="alert">
+                  <AlertTriangle size={16} />
+                  <span>{stepValidationError}</span>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="type">
+                  Issue Type:
+                </label>
+                <select
+                  id="type"
+                  name="type"
+                  value={newIssue.type}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="">-- Select Issue Type --</option>
+                  <optgroup label="Village Issues">
+                    <option value="unpaved-road">Unpaved Road</option>
+                    <option value="no-drainage">No Drainage System</option>
+                    <option value="electricity-outage">Electricity Outage</option>
+                    <option value="low-voltage">Low Voltage</option>
+                    <option value="water-scarcity">Water Scarcity</option>
+                    <option value="open-defecation">Open Defecation</option>
+                    <option value="animal-problem">Stray Animals</option>
+                    <option value="damaged-borewell">Damaged Borewell</option>
+                    <option value="lack-of-toilets">Lack of Toilets</option>
+                    <option value="unclean-handpumps">Unclean Hand Pumps</option>
+                    <option value="school-infra">Poor School Infrastructure</option>
+                    <option value="no-medical-center">No Primary Medical Center</option>
+                    <option value="poor-connectivity">Poor Mobile Network</option>
+                  </optgroup>
+                  <optgroup label="City Issues">
+                    <option value="pothole">Pothole</option>
+                    <option value="street-light">Street Light Out</option>
+                    <option value="graffiti">Graffiti</option>
+                    <option value="trash">Trash/Debris</option>
+                    <option value="water-leak">Water Leak</option>
+                    <option value="road-damage">Road Damage</option>
+                    <option value="sewage">Sewage Overflow</option>
+                    <option value="illegal-dumping">Illegal Dumping</option>
+                    <option value="abandoned-vehicle">Abandoned Vehicle</option>
+                    <option value="noise">Noise Complaint</option>
+                    <option value="construction-waste">Construction Waste</option>
+                    <option value="traffic-signal">Broken Traffic Signal</option>
+                    <option value="encroachment">Footpath Encroachment</option>
+                    <option value="overflowing-dustbin">Overflowing Dustbin</option>
+                  </optgroup>
+                  <optgroup label="Shared/Common Issues">
+                    <option value="blocked-drain">Blocked Drainage</option>
+                    <option value="sanitation">Poor Sanitation</option>
+                    <option value="foul-smell">Foul Smell/Dead Animal</option>
+                    <option value="drinking-water">Contaminated Drinking Water</option>
+                    <option value="school-issues">School Facility Issue</option>
+                    <option value="healthcare">Lack of Healthcare Access</option>
+                    <option value="other">Other</option>
+                  </optgroup>
+                </select>
+                <span className="field-hint">Select the closest municipal category for proper department assignment.</span>
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="description">
+                  Description:
+                </label>
+                <textarea
+                  id="description"
+                  name="description"
+                  value={newIssue.description}
+                  onChange={handleChange}
+                  placeholder="Describe the issue, landmarks, and severity in detail..."
+                  required
+                ></textarea>
+                <div className="textarea-footer">
+                  <span className="field-hint">Provide exact location cues and hazards for repair crews.</span>
+                  <span className="char-count">{newIssue.description.length} characters</span>
+                </div>
+              </div>
+
+              <div className="wizard-actions-row">
+                <button
+                  type="button"
+                  className="cancel-btn form-inline-cancel-btn"
+                  onClick={handleCancelReport}
+                  data-testid="form-inline-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="wizard-next-btn primary-btn"
+                  onClick={handleNextFromStep1}
+                  data-testid="step-1-next-btn"
+                >
+                  <span>Next: Photo & Location</span>
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* STEP 2: Add Photo & Location */}
+            <div 
+              className={`wizard-step-panel step-2 ${wizardStep === 2 ? "active" : "step-hidden"}`}
+              data-testid="wizard-step-2"
+            >
+              <div className="step-panel-header">
+                <h3>Step 2: Add a Photo & Location</h3>
+                <p>Attach photo evidence and pin the incident on the interactive map.</p>
+              </div>
+
+              {stepValidationError && wizardStep === 2 && (
+                <div className="step-validation-error" data-testid="step-2-validation-error" role="alert">
+                  <AlertTriangle size={16} />
+                  <span>{stepValidationError}</span>
+                </div>
+              )}
+
+              <div className="form-group image-upload-group">
+                <label htmlFor="image">Upload Image (optional):</label>
+                <div className="upload-controls">
+                  <input
+                    key={fileInputKey}
+                    type="file"
+                    id="image"
+                    name="image"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleImageChange}
+                    data-testid="image-file-input"
                   />
-                  <div className="preview-meta">
-                    <span className="preview-file-name">{newIssue.image?.name}</span>
+                  <button 
+                    type="button" 
+                    className="upload-btn"
+                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    data-testid="choose-file-btn"
+                  >
+                    <Camera size={16} /> Choose File
+                  </button>
+                  <span className="file-name" data-testid="file-name">
+                    {newIssue.image ? newIssue.image.name : "No file chosen"}
+                  </span>
+
+                  {newIssue.image && (
                     <button
                       type="button"
-                      className="btn-remove-preview"
-                      data-testid="btn-remove-preview"
-                      onClick={() => {
-                        updateImagePreview(null);
-                        setNewIssue((prev) => ({ ...prev, image: null }));
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                        setFileInputKey(Date.now());
-                        setExifCandidate(null);
-                        setOcrCandidate(null);
-                        setCandidateConflict(null);
-                        if (locationSource === "exif" || locationSource === "ocr") {
-                          setLocationSource(null);
-                          setMarkerPosition(null);
-                          setLocationFeedback(null);
-                        }
-                      }}
-                      aria-label="Remove photo"
+                      className="detect-ocr-btn"
+                      onClick={handleDetectOcr}
+                      disabled={ocrExtracting}
+                      data-testid="detect-ocr-btn"
                     >
-                      ✕ Remove Photo
+                      {ocrExtracting ? (
+                        <>
+                          <span className="btn-spinner mini"></span>
+                          Scanning photo text...
+                        </>
+                      ) : (
+                        "🔍 Detect coordinates from photo"
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Instant Image Preview Thumbnail */}
+                {imagePreview && (
+                  <div className="image-preview-container" data-testid="image-preview-container">
+                    <img
+                      src={imagePreview}
+                      alt="Defect Preview"
+                      className="image-preview-thumb"
+                      data-testid="image-preview-thumb"
+                    />
+                    <div className="preview-meta">
+                      <span className="preview-file-name">{newIssue.image?.name}</span>
+                      <button
+                        type="button"
+                        className="btn-remove-preview"
+                        data-testid="btn-remove-preview"
+                        onClick={() => {
+                          updateImagePreview(null);
+                          setNewIssue((prev) => ({ ...prev, image: null }));
+                          if (fileInputRef.current) fileInputRef.current.value = "";
+                          setFileInputKey(Date.now());
+                          setExifCandidate(null);
+                          setOcrCandidate(null);
+                          setCandidateConflict(null);
+                          if (locationSource === "exif" || locationSource === "ocr") {
+                            setLocationSource(null);
+                            setMarkerPosition(null);
+                            setLocationFeedback(null);
+                          }
+                        }}
+                        aria-label="Remove photo"
+                      >
+                        ✕ Remove Photo
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="detection-badges">
+                  {locationSource === "exif" && (
+                    <span className="exif-badge success" data-testid="exif-success-badge">
+                      📍 EXIF GPS Coordinates Detected
+                    </span>
+                  )}
+                  {locationSource === "ocr" && (
+                    <span className="exif-badge ocr-badge" data-testid="ocr-success-badge">
+                      🔍 Photo Watermark GPS Detected
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Selected Location Summary Pill */}
+              {markerPosition && (
+                <div className="selected-location-summary" data-testid="selected-location-summary">
+                  <div className="summary-pin-icon">
+                    <MapPin size={18} />
+                  </div>
+                  <div className="summary-coords-text">
+                    <strong>Incident Coordinates:</strong> {markerPosition[0].toFixed(5)}, {markerPosition[1].toFixed(5)}
+                    <span className="summary-source-label">
+                      ({locationSource === "exif" ? "Photo EXIF GPS" : locationSource === "ocr" ? "Photo Watermark OCR" : "Manual Map Pin"})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="map-instructions">
+                <p>Select the issue location on the map (or upload a geotagged photo):</p>
+                {exifExtracting && (
+                  <div className="location-banner analyzing" data-testid="exif-analyzing">
+                    <span>🔍 Reading photo metadata for EXIF GPS coordinates...</span>
+                  </div>
+                )}
+                {ocrExtracting && (
+                  <div className="location-banner analyzing" data-testid="ocr-analyzing">
+                    <span>🔍 Scanning photo watermark text for GPS coordinates (OCR)...</span>
+                  </div>
+                )}
+                {locationFeedback && (
+                  <div className={`location-banner ${locationFeedback.type}`} data-testid="location-feedback-banner">
+                    <span className="feedback-text">{locationFeedback.message}</span>
+                    {locationSource === "exif" && (
+                      <span className="source-tag exif-tag">Photo EXIF GPS</span>
+                    )}
+                    {locationSource === "ocr" && (
+                      <span className="source-tag ocr-tag">Photo Watermark OCR</span>
+                    )}
+                    {locationSource === "manual" && (
+                      <span className="source-tag manual-tag">Manual Pin</span>
+                    )}
+                  </div>
+                )}
+                {!markerPosition && !locationFeedback && !exifExtracting && !ocrExtracting && (
+                  <div className="location-banner empty" data-testid="location-empty-banner">
+                    <span>⚠️ No location selected yet. Click on the map to place a pin, or upload a photo containing EXIF GPS or watermark.</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="map-container">
+                <MapContainer 
+                  center={defaultCenter} 
+                  zoom={13} 
+                  style={{ height: "380px", width: "100%" }}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  
+                  <AddMarkerOnClick onLocationSelect={handleLocationSelect} />
+                  <MapViewUpdater position={markerPosition} />
+                  
+                  {markerPosition && (
+                    <Marker position={markerPosition}>
+                      <Popup>
+                        <div>
+                          <strong>Incident Location</strong><br />
+                          Lat: {markerPosition[0].toFixed(5)}, Lng: {markerPosition[1].toFixed(5)}<br />
+                          <em>Source: {
+                            locationSource === "exif" ? "Photo EXIF GPS" :
+                            locationSource === "ocr" ? "Photo Watermark OCR" :
+                            "Manual Pin"
+                          }</em>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  )}
+                </MapContainer>
+              </div>
+
+              {candidateConflict && (
+                <div className="conflict-card" data-testid="coordinate-conflict-card">
+                  <div className="conflict-header">
+                    <span className="conflict-icon">⚠️</span>
+                    <h4>Location Discrepancy Detected</h4>
+                  </div>
+                  <p className="conflict-desc">
+                    Photo EXIF metadata and visible watermark text indicate different locations ({formatDistance(candidateConflict.distanceMeters)} apart). Please select the authoritative incident coordinates:
+                  </p>
+                  <div className="conflict-options">
+                    <button
+                      type="button"
+                      className={`candidate-btn ${locationSource === "exif" ? "active" : ""}`}
+                      onClick={() => handleSelectCandidate("exif")}
+                      data-testid="choose-exif-btn"
+                    >
+                      <span className="candidate-title">📷 Photo EXIF GPS</span>
+                      <span className="candidate-coords">
+                        {formatCoordinates(candidateConflict.exif.lat, candidateConflict.exif.lng)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`candidate-btn ${locationSource === "ocr" ? "active" : ""}`}
+                      onClick={() => handleSelectCandidate("ocr")}
+                      data-testid="choose-ocr-btn"
+                    >
+                      <span className="candidate-title">🔍 Watermark OCR</span>
+                      <span className="candidate-coords">
+                        {formatCoordinates(candidateConflict.ocr.lat, candidateConflict.ocr.lng)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`candidate-btn manual ${locationSource === "manual" ? "active" : ""}`}
+                      onClick={() => handleSelectCandidate("manual")}
+                      data-testid="choose-manual-btn"
+                    >
+                      <span className="candidate-title">📍 Pin on Map Manually</span>
+                      <span className="candidate-coords">Click anywhere on the map</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              <div className="detection-badges">
-                {locationSource === "exif" && (
-                  <span className="exif-badge success" data-testid="exif-success-badge">
-                    📍 EXIF GPS Coordinates Detected
-                  </span>
-                )}
-                {locationSource === "ocr" && (
-                  <span className="exif-badge ocr-badge" data-testid="ocr-success-badge">
-                    🔍 Photo Watermark GPS Detected
-                  </span>
-                )}
+              <div className="wizard-actions-row">
+                <button
+                  type="button"
+                  className="cancel-btn wizard-back-btn"
+                  onClick={() => {
+                    setStepValidationError("");
+                    setWizardStep(1);
+                  }}
+                  data-testid="step-2-back-btn"
+                >
+                  <ChevronLeft size={18} />
+                  <span>Back: Describe</span>
+                </button>
+                <button
+                  type="button"
+                  className="cancel-btn form-inline-cancel-btn"
+                  onClick={handleCancelReport}
+                  data-testid="step-2-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="wizard-next-btn primary-btn"
+                  onClick={handleNextFromStep2}
+                  data-testid="step-2-next-btn"
+                >
+                  <span>Next: Review & Submit</span>
+                  <ChevronRight size={18} />
+                </button>
               </div>
             </div>
-            
-            <div className="form-actions-row">
-              <button
-                type="submit"
-                className="submit-btn"
-                disabled={!markerPosition || submitting}
-                data-testid="submit-report-btn"
-              >
-                {submitting && <span className="btn-spinner"></span>}
-                {submitting ? "Submitting..." : "Submit Report"}
-              </button>
-              <button
-                type="button"
-                className="cancel-btn form-inline-cancel-btn"
-                onClick={handleCancelReport}
-                data-testid="form-inline-cancel-btn"
-              >
-                Cancel
-              </button>
+
+            {/* STEP 3: Review and Submit */}
+            <div 
+              className={`wizard-step-panel step-3 ${wizardStep === 3 ? "active" : "step-hidden"}`}
+              data-testid="wizard-step-3"
+            >
+              <div className="step-panel-header">
+                <h3>Step 3: Review and Submit</h3>
+                <p>Review the details of your issue before final submission.</p>
+              </div>
+
+              <div className="review-summary-card" data-testid="wizard-review-summary">
+                <div className="review-row">
+                  <span className="review-label">Issue Type:</span>
+                  <span className="review-value" data-testid="review-category-value">
+                    {newIssue.type ? newIssue.type.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "Not selected"}
+                  </span>
+                </div>
+                <div className="review-row">
+                  <span className="review-label">Description:</span>
+                  <span className="review-value" data-testid="review-description-value">
+                    {newIssue.description || "None provided"}
+                  </span>
+                </div>
+                <div className="review-row">
+                  <span className="review-label">Location:</span>
+                  <span className="review-value" data-testid="review-location-value">
+                    {markerPosition ? (
+                      <>
+                        <span>Lat: {markerPosition[0].toFixed(5)}, Lng: {markerPosition[1].toFixed(5)}</span>
+                        <span className="source-tag mini">
+                          {locationSource === "exif" ? "Photo EXIF" : locationSource === "ocr" ? "Watermark OCR" : "Manual Pin"}
+                        </span>
+                      </>
+                    ) : (
+                      "No location selected"
+                    )}
+                  </span>
+                </div>
+                <div className="review-row">
+                  <span className="review-label">Photo Evidence:</span>
+                  <span className="review-value" data-testid="review-photo-value">
+                    {imagePreview ? (
+                      <div className="review-photo-container">
+                        <img src={imagePreview} alt="Review Preview" className="review-photo-thumb" />
+                        <span className="review-photo-name">{newIssue.image?.name}</span>
+                      </div>
+                    ) : (
+                      "No photo attached (optional)"
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="review-notice">
+                <CheckCircle2 size={16} />
+                <span>By submitting, this report will be prioritized in the municipal dispatch triage queue.</span>
+              </div>
+
+              <div className="wizard-actions-row">
+                <button
+                  type="button"
+                  className="cancel-btn wizard-back-btn"
+                  onClick={() => {
+                    setStepValidationError("");
+                    setWizardStep(2);
+                  }}
+                  data-testid="step-3-back-btn"
+                >
+                  <ChevronLeft size={18} />
+                  <span>Back: Location</span>
+                </button>
+                <button
+                  type="button"
+                  className="cancel-btn form-inline-cancel-btn"
+                  onClick={handleCancelReport}
+                  data-testid="step-3-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="submit-btn primary-btn"
+                  disabled={!markerPosition || submitting}
+                  data-testid="submit-report-btn"
+                >
+                  {submitting && <span className="btn-spinner"></span>}
+                  {submitting ? "Submitting..." : "Submit Report"}
+                </button>
+              </div>
             </div>
           </form>
         </div>
