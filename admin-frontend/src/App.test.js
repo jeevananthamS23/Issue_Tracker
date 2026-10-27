@@ -2181,6 +2181,619 @@ describe("Admin Frontend Application Tests", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
+
+  test("43. Modal Accessibility: Focus moves inside modal on open, Escape closes it, and focus returns to opener", async () => {
+    const mockAdmin = {
+      _id: "adm_a11y_01",
+      email: "a11y.admin@civicvision.gov",
+      fullName: "Accessibility Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000501",
+      type: "pothole",
+      description: "Pothole for a11y focus test",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      createdAt: new Date().toISOString(),
+      statusHistory: [],
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Pothole for a11y focus test")).toBeInTheDocument();
+
+    const openerBtn = screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` });
+    openerBtn.focus();
+    expect(document.activeElement).toBe(openerBtn);
+
+    fireEvent.click(openerBtn);
+
+    // Modal dialog rendered with accessible semantics
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAttribute("aria-labelledby", "modal-issue-title");
+
+    const closeBtn = screen.getByLabelText("Close modal");
+    expect(closeBtn).toBeInTheDocument();
+
+    // Verify initial focus is moved to the close button
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeBtn);
+    });
+
+    // Press Escape to dismiss
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // Focus restored to opener element
+    await waitFor(() => {
+      expect(document.activeElement).toBe(openerBtn);
+    });
+  });
+
+  test("44. Modal Accessibility: Tab and Shift+Tab wrap within focusable elements inside the modal", async () => {
+    const mockAdmin = {
+      _id: "adm_a11y_02",
+      email: "a11y2.admin@civicvision.gov",
+      fullName: "Trap Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000502",
+      type: "pothole",
+      description: "Pothole for focus trap test",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Pothole for focus trap test")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+
+    const focusable = dialog.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    expect(focusable.length).toBeGreaterThan(1);
+
+    const firstElement = focusable[0];
+    const lastElement = focusable[focusable.length - 1];
+
+    // Focus the last element and press Tab -> should wrap to first element
+    lastElement.focus();
+    expect(document.activeElement).toBe(lastElement);
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(firstElement);
+
+    // Focus first element and press Shift+Tab -> should wrap to last element
+    firstElement.focus();
+    expect(document.activeElement).toBe(firstElement);
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(lastElement);
+  });
+
+  test("45. Nested Overlays: Confirmation prompt handles Escape independently without closing parent modal", async () => {
+    const mockAdmin = {
+      _id: "adm_a11y_03",
+      email: "a11y3.admin@civicvision.gov",
+      fullName: "Hierarchy Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockDuplicateIssue = {
+      _id: "660000000000000000000503",
+      type: "pothole",
+      description: "Candidate duplicate pothole",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      duplicateStatus: "flagged_duplicate",
+      similarityScore: 0.88,
+      needsReview: true,
+      reviewResolution: "none",
+      duplicateOf: {
+        _id: "660000000000000000000100",
+        type: "pothole",
+        description: "Primary verified pothole",
+        status: "in-progress",
+        createdAt: new Date().toISOString(),
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockDuplicateIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Candidate duplicate pothole")).toBeInTheDocument();
+
+    // Open comparison modal
+    const compBtn = screen.getByRole("button", { name: `Compare duplicate issue ${mockDuplicateIssue._id}` });
+    fireEvent.click(compBtn);
+
+    const compDialog = await screen.findByRole("dialog");
+    expect(compDialog).toBeInTheDocument();
+    expect(screen.getByText("Duplicate Assessment & Moderation")).toBeInTheDocument();
+
+    // Click "Confirm Duplicate" to show confirmation dialog
+    const confirmTriggerBtn = screen.getByRole("button", { name: /Confirm Duplicate/i });
+    fireEvent.click(confirmTriggerBtn);
+
+    const alertBox = await screen.findByRole("alertdialog");
+    expect(alertBox).toBeInTheDocument();
+    expect(screen.getByText("Confirm Issue as Duplicate?")).toBeInTheDocument();
+
+    // Verify non-destructive Cancel button is in the confirm dialog
+    const cancelConfirmBtn = screen.getByRole("button", { name: "Cancel" });
+    expect(cancelConfirmBtn).toBeInTheDocument();
+
+    // Press Escape -> closes ONLY the confirmation dialog prompt
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    // Parent comparison modal must STILL remain open!
+    expect(screen.getByText("Duplicate Assessment & Moderation")).toBeInTheDocument();
+
+    // Press Escape again -> closes comparison modal
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Duplicate Assessment & Moderation")).not.toBeInTheDocument();
+    });
+  });
+
+  test("46. Status History: Renders entries in chronological order with transitions, timestamps, admin, notes, and latest badge", async () => {
+    const mockAdmin = {
+      _id: "adm_sh_01",
+      email: "audit.admin@civicvision.gov",
+      fullName: "Audit Specialist",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000504",
+      type: "garbage",
+      description: "Illegal dump site near park entrance",
+      status: "resolved",
+      department: "Waste Management",
+      createdAt: "2026-10-10T08:00:00.000Z",
+      statusHistory: [
+        // Note: deliberately unsorted to test that frontend sorts chronologically
+        {
+          _id: "sh_entry_02",
+          from: "in-progress",
+          to: "resolved",
+          changedAt: "2026-10-14T15:30:00.000Z",
+          changedBy: { fullName: "Supervisor Maria Lopez", email: "maria@civicvision.gov" },
+          reason: "Cleanup crew finished removal and site sanitized.",
+        },
+        {
+          _id: "sh_entry_01",
+          from: "reported",
+          to: "in-progress",
+          changedAt: "2026-10-11T09:15:00.000Z",
+          changedBy: { fullName: "Dispatcher John Doe", email: "john@civicvision.gov" },
+          reason: "Work order #9822 issued to Sanitation Unit 4.",
+        },
+      ],
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Illegal dump site near park entrance")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // Verify Status History Audit Trail section exists
+    expect(screen.getByTestId("status-history-section")).toBeInTheDocument();
+    expect(screen.getByTestId("status-history-count")).toHaveTextContent("2 transitions");
+
+    // Chronological order verification
+    const entry0 = screen.getByTestId("status-history-entry-0");
+    const entry1 = screen.getByTestId("status-history-entry-1");
+
+    // Entry 0 must be the earlier transition: reported -> in-progress
+    expect(entry0).toHaveTextContent("reported");
+    expect(entry0).toHaveTextContent("in progress");
+    expect(entry0).toHaveTextContent("Dispatcher John Doe");
+    expect(entry0).toHaveTextContent("Work order #9822 issued to Sanitation Unit 4.");
+
+    // Entry 1 must be the later transition: in-progress -> resolved
+    expect(entry1).toHaveTextContent("in progress");
+    expect(entry1).toHaveTextContent("resolved");
+    expect(entry1).toHaveTextContent("Supervisor Maria Lopez");
+    expect(entry1).toHaveTextContent("Cleanup crew finished removal and site sanitized.");
+
+    // Entry 1 is the latest transition and has the latest transition badge
+    expect(entry1.querySelector(".badge-latest-transition")).toBeInTheDocument();
+    expect(entry0.querySelector(".badge-latest-transition")).toBeNull();
+  });
+
+  test("47. Status History: Empty state displays properly and missing optional fields do not crash the component", async () => {
+    const mockAdmin = {
+      _id: "adm_sh_02",
+      email: "audit2.admin@civicvision.gov",
+      fullName: "Edge Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssueEmpty = {
+      _id: "660000000000000000000505",
+      type: "water_leak",
+      description: "Hydrant drip without any status changes yet",
+      status: "reported",
+      department: "Water Services",
+      createdAt: new Date().toISOString(),
+      statusHistory: [],
+    };
+
+    const mockIssueMalformed = {
+      _id: "660000000000000000000506",
+      type: "street_light",
+      description: "Flickering street lamp with minimal history data",
+      status: "in-progress",
+      department: "Street Lighting",
+      createdAt: new Date().toISOString(),
+      statusHistory: [
+        {
+          _id: "sh_malformed_01",
+          from: null,
+          to: "in-progress",
+          changedAt: null,
+          changedBy: null,
+          reason: null,
+        },
+      ],
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssueEmpty, mockIssueMalformed] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Hydrant drip without any status changes yet")).toBeInTheDocument();
+
+    // 1. Check issue with empty history
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssueEmpty._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    const emptyBox = screen.getByTestId("status-history-empty");
+    expect(emptyBox).toBeInTheDocument();
+    expect(emptyBox).toHaveTextContent("No status transitions recorded yet");
+    expect(emptyBox).toHaveTextContent("reported");
+
+    // Close modal
+    fireEvent.click(screen.getByLabelText("Close modal"));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // 2. Check issue with null/missing optional fields in status history
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssueMalformed._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    const entry = screen.getByTestId("status-history-entry-0");
+    expect(entry).toBeInTheDocument();
+    expect(entry).toHaveTextContent("in progress");
+    // Verify it didn't invent non-existent notes or administrators
+    expect(entry).not.toHaveTextContent("Notes:");
+  });
+
+  test("48. Issue Detail Triage: Status update succeeds and dynamically appends newly recorded statusHistory transition", async () => {
+    const mockAdmin = {
+      _id: "adm_sh_03",
+      email: "audit3.admin@civicvision.gov",
+      fullName: "Workflow Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockResolvedValueOnce({
+      data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true },
+    });
+
+    const mockIssue = {
+      _id: "660000000000000000000507",
+      type: "pothole",
+      description: "Deep crater on 5th Ave",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      statusHistory: [],
+    };
+
+    API.get.mockResolvedValueOnce({ data: [mockIssue] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Deep crater on 5th Ave")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: `Triage issue ${mockIssue._id}` }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // Verify initially empty history
+    expect(screen.getByTestId("status-history-empty")).toBeInTheDocument();
+
+    // Update status to in-progress
+    const statusSelect = screen.getByLabelText("Remediation Status");
+    fireEvent.change(statusSelect, { target: { value: "in-progress" } });
+
+    const notesArea = screen.getByLabelText(/Internal Remediation Notes/i);
+    fireEvent.change(notesArea, { target: { value: "Asphalt patch team assigned" } });
+
+    const updatedIssue = {
+      ...mockIssue,
+      status: "in-progress",
+      internalNotes: "Asphalt patch team assigned",
+      statusHistory: [
+        {
+          _id: "sh_new_01",
+          from: "reported",
+          to: "in-progress",
+          changedAt: new Date().toISOString(),
+          changedBy: { fullName: "Workflow Auditor" },
+          reason: "Asphalt patch team assigned",
+          notes: "Asphalt patch team assigned",
+        },
+      ],
+    };
+
+    API.patch.mockResolvedValueOnce({ data: updatedIssue });
+
+    const saveBtn = screen.getByRole("button", { name: /Save Status & Assignment/i });
+    fireEvent.click(saveBtn);
+
+    // Verify success banner
+    expect(await screen.findByText("Issue status updated successfully.")).toBeInTheDocument();
+
+    // Verify that the status history timeline now renders the new transition
+    expect(screen.queryByTestId("status-history-empty")).not.toBeInTheDocument();
+    expect(screen.getByTestId("status-history-entry-0")).toBeInTheDocument();
+    expect(screen.getByTestId("status-history-entry-0")).toHaveTextContent("reported");
+    expect(screen.getByTestId("status-history-entry-0")).toHaveTextContent("in progress");
+    expect(screen.getByTestId("status-history-entry-0")).toHaveTextContent("Workflow Auditor");
+    expect(screen.getByTestId("status-history-entry-0")).toHaveTextContent("Asphalt patch team assigned");
+  });
+
+  test("49. Notification Polling Visibility Guard: Pauses polling while document is hidden and resumes immediately when visible", async () => {
+    const mockAdmin = {
+      _id: "adm_poll_01",
+      email: "poll.admin@civicvision.gov",
+      fullName: "Polling Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockImplementation((url) => {
+      if (url.includes("/admin/profile") || url.includes("profile")) {
+        return Promise.resolve({ data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true } });
+      }
+      if (url.includes("issues")) {
+        return Promise.resolve({ data: [] });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<App />);
+
+    // Wait for Dashboard to mount
+    expect(await screen.findByText("Polling Auditor")).toBeInTheDocument();
+
+    // Verify initial load occurred
+    await waitFor(() => {
+      expect(mockFetchUnreadNotificationCount).toHaveBeenCalled();
+    });
+    mockFetchUnreadNotificationCount.mockClear();
+
+    // 1. Simulate tab hidden
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true,
+    });
+
+    // Fire visibilitychange to hidden (should not trigger fetch)
+    fireEvent(document, new Event("visibilitychange"));
+    expect(mockFetchUnreadNotificationCount).not.toHaveBeenCalled();
+
+    // 2. Simulate tab becoming visible again
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+    fireEvent(document, new Event("visibilitychange"));
+
+    // Verify immediate refresh when tab becomes visible
+    await waitFor(() => {
+      expect(mockFetchUnreadNotificationCount).toHaveBeenCalledTimes(1);
+    });
+
+    // Restore visibilityState
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+  });
+
+  test("50. Notification Polling Visibility Guard: Cleans up interval and visibilitychange listener on unmount", async () => {
+    const mockAdmin = {
+      _id: "adm_poll_02",
+      email: "cleanup.admin@civicvision.gov",
+      fullName: "Cleanup Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    API.get.mockImplementation((url) => {
+      if (url.includes("/admin/profile") || url.includes("profile")) {
+        return Promise.resolve({ data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const removeListenerSpy = jest.spyOn(document, "removeEventListener");
+    const clearIntervalSpy = jest.spyOn(window, "clearInterval");
+
+    const { unmount } = render(<App />);
+
+    // Wait for dashboard to mount before unmounting
+    expect(await screen.findByText("Cleanup Auditor")).toBeInTheDocument();
+
+    unmount();
+
+    expect(removeListenerSpy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    removeListenerSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
+  test("51. Secondary Views & Mobile Queue: Seamless navigation across Hotspots, Notifications, and Analytics with responsive controls", async () => {
+    const mockAdmin = {
+      _id: "adm_views_01",
+      email: "views.admin@civicvision.gov",
+      fullName: "Secondary Views Auditor",
+      role: "admin",
+    };
+    localStorage.setItem("adminToken", "mock_admin_token");
+    localStorage.setItem("adminData", JSON.stringify(mockAdmin));
+
+    const mockIssue = {
+      _id: "660000000000000000000601",
+      type: "pothole",
+      description: "Mobile issue queue item",
+      status: "reported",
+      department: "Roads & Infrastructure",
+      createdAt: new Date().toISOString(),
+    };
+
+    API.get.mockImplementation((url) => {
+      if (url.includes("/admin/profile") || url.includes("profile")) {
+        return Promise.resolve({ data: { error: false, admin: mockAdmin, role: "admin", isAdmin: true } });
+      }
+      if (url.includes("issues")) {
+        return Promise.resolve({ data: [mockIssue] });
+      }
+      if (url.includes("hotspots")) {
+        return Promise.resolve({ data: { error: false, hotspots: [], total: 0, page: 1, limit: 20 } });
+      }
+      if (url.includes("notifications")) {
+        return Promise.resolve({ data: { error: false, notifications: [], total: 0, unreadCount: 0 } });
+      }
+      if (url.includes("analytics")) {
+        return Promise.resolve({
+          data: {
+            error: false,
+            data: {
+              summary: {
+                totalIssues: 1,
+                openIssues: 1,
+                resolvedIssues: 0,
+                reportedIssues: 1,
+                inProgressIssues: 0,
+                needsReviewIssues: 0,
+                resolutionRate: 0,
+                resolutionRateFormatted: "0.0%",
+              },
+              mttr: { avgHours: null, sampleSize: 0, formatted: "N/A" },
+              breakdowns: {
+                byStatus: { reported: 1 },
+                byCategory: [{ category: "pothole", count: 1, percentage: "100%" }],
+                byDepartment: [{ department: "Roads & Infrastructure", count: 1, percentage: "100%" }],
+              },
+              hotspots: { total: 0, active: 0, totalDistinctDefects: 0 },
+              trend: { days: 30, data: [] },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Mobile issue queue item")).toBeInTheDocument();
+
+    // 1. Check mobile queue table wrapper exists and has search input
+    const tableWrapper = document.querySelector(".table-wrapper");
+    expect(tableWrapper).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search by ID/i)).toBeInTheDocument();
+
+    // 2. Switch to Hotspots Tab
+    const hotspotsTab = screen.getByTestId("tab-hotspots");
+    fireEvent.click(hotspotsTab);
+
+    expect(await screen.findByTestId("hotspots-section")).toBeInTheDocument();
+    expect(screen.getByTestId("refresh-hotspots-btn")).toBeInTheDocument();
+
+    // 3. Open Notifications Center via Bell
+    const bellBtn = screen.getByTestId("btn-notification-bell");
+    fireEvent.click(bellBtn);
+
+    expect(await screen.findByTestId("notification-center")).toBeInTheDocument();
+    expect(screen.getByTestId("mark-all-read-btn")).toBeInTheDocument();
+
+    // 4. Switch to Analytics Tab
+    const analyticsTab = screen.getByTestId("tab-analytics");
+    fireEvent.click(analyticsTab);
+
+    expect(await screen.findByTestId("analytics-section")).toBeInTheDocument();
+    expect(screen.getByText("Municipal Performance Analytics")).toBeInTheDocument();
+  });
 });
+
 
 

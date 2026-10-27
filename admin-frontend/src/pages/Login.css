@@ -1,4 +1,7 @@
-/* Login.css - Admin Portal Login Styles */
+/* ==========================================================================
+   CivicVision AI - Administrator Portal Login Styles
+   Slate & Paper Institutional Design System
+   ========================================================================== */
 
 .admin-login-container {
   min-height: 100vh;
@@ -6,23 +9,26 @@
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: radial-gradient(circle at 50% 10%, #1e293b 0%, #0f172a 100%);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #f1f5f9;
+  background-color: var(--civic-canvas);
+  background-image:
+    radial-gradient(at 100% 0%, rgba(29, 78, 216, 0.05) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(15, 23, 42, 0.04) 0px, transparent 50%);
+  font-family: var(--civic-font);
+  color: var(--civic-text);
 }
 
 .admin-login-card {
   width: 100%;
   max-width: 440px;
-  background: rgba(30, 41, 59, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  backdrop-filter: blur(16px);
-  border-radius: 1rem;
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 20px rgba(59, 130, 246, 0.08);
-  padding: 2.25rem;
+  background: var(--civic-card);
+  border: 1px solid var(--civic-border);
+  border-radius: var(--civic-radius-lg);
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  padding: 2.5rem 2.25rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  position: relative;
 }
 
 .admin-login-header {
@@ -37,46 +43,57 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.85rem;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  padding: 0.35rem 0.85rem;
+  background: var(--civic-blue-50);
+  border: 1px solid #bfdbfe;
   border-radius: 9999px;
-  color: #60a5fa;
-  font-weight: 600;
+  color: var(--civic-blue-700);
+  font-weight: 700;
   font-size: 0.875rem;
   letter-spacing: 0.025em;
   margin-bottom: 0.25rem;
 }
 
+.shield-icon {
+  color: var(--civic-blue-700);
+}
+
 .portal-title {
   font-size: 1.625rem;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--civic-navy-900);
   margin: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
 }
 
 .portal-subtitle {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: var(--civic-text-sub);
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .alert-banner {
   display: flex;
   align-items: flex-start;
   gap: 0.65rem;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--civic-radius);
   font-size: 0.875rem;
   line-height: 1.4;
 }
 
 .alert-banner.error {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
+  background: var(--civic-danger-bg);
+  border: 1px solid var(--civic-danger-bd);
+  color: var(--civic-danger-text);
+}
+
+.alert-icon {
+  color: var(--civic-danger-text);
+  flex-shrink: 0;
+  margin-top: 0.1rem;
 }
 
 .admin-login-form {
@@ -92,34 +109,35 @@
 }
 
 .form-group label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--civic-navy-800);
 }
 
 .input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 0.5rem;
-  transition: all 0.2s ease;
+  background: #ffffff;
+  border: 1px solid var(--civic-input-bd);
+  border-radius: var(--civic-radius);
+  transition: border-color var(--civic-transition), box-shadow var(--civic-transition);
 }
 
 .input-wrapper:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  border-color: var(--civic-focus);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
 }
 
 .input-wrapper.input-error {
-  border-color: #ef4444;
+  border-color: var(--civic-danger-text);
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.12);
 }
 
 .input-icon {
   position: absolute;
   left: 0.85rem;
-  color: #64748b;
+  color: var(--civic-slate-400);
   pointer-events: none;
 }
 
@@ -128,67 +146,82 @@
   padding: 0.75rem 0.85rem 0.75rem 2.5rem;
   background: transparent;
   border: none;
-  color: #f8fafc;
+  color: var(--civic-navy-900);
   font-size: 0.9375rem;
   font-family: inherit;
   outline: none;
 }
 
 .input-wrapper input:disabled {
-  opacity: 0.6;
+  background-color: var(--civic-slate-100);
+  opacity: 0.7;
   cursor: not-allowed;
 }
 
 .input-wrapper input::placeholder {
-  color: #475569;
+  color: var(--civic-slate-400);
 }
 
 .toggle-password-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--civic-slate-500);
   cursor: pointer;
   padding: 0.5rem 0.85rem;
   display: flex;
   align-items: center;
-  transition: color 0.15s ease;
+  transition: color var(--civic-transition);
 }
 
 .toggle-password-btn:hover {
-  color: #cbd5e1;
+  color: var(--civic-navy-900);
+}
+
+.toggle-password-btn:focus-visible {
+  outline: 2px solid var(--civic-focus);
+  outline-offset: -2px;
+  border-radius: var(--civic-radius-sm);
 }
 
 .error-text {
-  font-size: 0.75rem;
-  color: #f87171;
+  font-size: 0.8125rem;
+  color: var(--civic-danger-text);
   margin-top: 0.15rem;
+  font-weight: 500;
 }
 
 .btn-submit-login {
   margin-top: 0.5rem;
-  padding: 0.8rem 1.25rem;
-  background: #2563eb;
+  padding: 0.85rem 1.25rem;
+  background: var(--civic-blue-700);
   color: #ffffff;
-  border: none;
-  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--civic-radius);
   font-size: 0.9375rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color var(--civic-transition), box-shadow var(--civic-transition), transform var(--civic-transition);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--civic-shadow-sm);
 }
 
 .btn-submit-login:hover:not(:disabled) {
-  background: #1d4ed8;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+  background: var(--civic-blue-800);
+  box-shadow: var(--civic-shadow-md);
+}
+
+.btn-submit-login:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .btn-submit-login:disabled {
-  opacity: 0.65;
+  background: var(--civic-slate-300);
+  color: var(--civic-slate-600);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .btn-loading {
@@ -200,7 +233,7 @@
 .spinner-sm {
   width: 1rem;
   height: 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.4);
   border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -214,22 +247,62 @@
 
 .security-notice-panel {
   padding: 0.85rem 1rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px dashed rgba(100, 116, 139, 0.3);
-  border-radius: 0.5rem;
+  background: var(--civic-slate-50);
+  border: 1px solid var(--civic-border);
+  border-radius: var(--civic-radius);
   font-size: 0.75rem;
 }
 
 .security-notice-title {
-  font-weight: 600;
-  color: #94a3b8;
+  font-weight: 700;
+  color: var(--civic-navy-800);
   margin: 0 0 0.25rem 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-size: 0.6875rem;
 }
 
 .security-notice-body {
-  color: #64748b;
+  color: var(--civic-text-sub);
   margin: 0;
   line-height: 1.45;
+  font-size: 0.75rem;
+}
+
+/* Responsive Viewports */
+@media (max-width: 480px) {
+  .admin-login-container {
+    padding: 1rem;
+  }
+
+  .admin-login-card {
+    padding: 1.75rem 1.25rem;
+    gap: 1.25rem;
+    border-radius: var(--civic-radius);
+  }
+
+  .portal-title {
+    font-size: 1.375rem;
+  }
+
+  .brand-badge {
+    font-size: 0.8125rem;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .input-wrapper input {
+    font-size: 0.875rem;
+    padding: 0.7rem 0.75rem 0.7rem 2.35rem;
+  }
+
+  .btn-submit-login {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .admin-login-card {
+    padding: 2.25rem 1.75rem;
+  }
 }

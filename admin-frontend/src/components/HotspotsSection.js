@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import useModalA11y from "../hooks/useModalA11y";
 import {
   Flame,
   RefreshCw,
@@ -246,6 +247,17 @@ const HotspotsSection = ({ initialSelectedHotspotId, onClearInitialHotspotId }) 
     setHotspotDetail(null);
     setDetailError(null);
   };
+
+  const hotspotModalRef = useRef(null);
+  const hotspotCloseBtnRef = useRef(null);
+
+  useModalA11y({
+    isOpen: !!selectedHotspotId,
+    onClose: handleCloseDetail,
+    modalRef: hotspotModalRef,
+    initialFocusRef: hotspotCloseBtnRef,
+    isTopmost: true
+  });
 
   useEffect(() => {
     if (initialSelectedHotspotId) {
@@ -637,6 +649,8 @@ const HotspotsSection = ({ initialSelectedHotspotId, onClearInitialHotspotId }) 
       {selectedHotspotId && (
         <div className="modal-overlay" onClick={handleCloseDetail} data-testid="hotspot-detail-modal-overlay">
           <div
+            ref={hotspotModalRef}
+            tabIndex={-1}
             className="hotspot-detail-modal"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
@@ -651,6 +665,7 @@ const HotspotsSection = ({ initialSelectedHotspotId, onClearInitialHotspotId }) 
                 </h2>
               </div>
               <button
+                ref={hotspotCloseBtnRef}
                 type="button"
                 className="btn-modal-close"
                 onClick={handleCloseDetail}

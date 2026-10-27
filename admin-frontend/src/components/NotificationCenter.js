@@ -148,6 +148,17 @@ const NotificationCenter = ({ onNavigateToHotspot, onUnreadCountChange }) => {
 
   useEffect(() => {
     loadNotifications();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadNotifications();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadNotifications]);
 
   const handleManualRefresh = () => {

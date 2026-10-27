@@ -1,4 +1,73 @@
-/* Global styles for Admin Frontend */
+/* ==========================================================================
+   CivicVision AI - Administrative Design System Foundation (Slate & Paper)
+   WCAG AA Compliant • Institutional Government Standard
+   ========================================================================== */
+
+:root {
+  /* Institutional Brand Anchors */
+  --civic-navy-900: #0f172a;   /* Primary dark slate */
+  --civic-navy-800: #1e293b;   /* Secondary slate */
+  --civic-navy-700: #334155;   /* Subtle structural outlines */
+  --civic-blue-700: #1d4ed8;   /* Primary civic action buttons */
+  --civic-blue-800: #1e40af;   /* Hover / active button states */
+  --civic-blue-50:  #eff6ff;   /* Active card background, dropzone highlight */
+
+  /* Neutral Surfaces */
+  --civic-canvas:        #f8fafc;   /* Main page background */
+  --civic-card:          #ffffff;   /* Card, container, and modal surfaces */
+  --civic-border:        #e2e8f0;   /* Structural card dividers */
+  --civic-border-strong: #cbd5e1;   /* Stronger dividers */
+  --civic-input-bd:      #94a3b8;   /* Input border meeting 3:1 contrast */
+  --civic-text:          #0f172a;   /* Primary body text */
+  --civic-text-sub:      #475569;   /* Supporting text and captions */
+  --civic-focus:         #1d4ed8;   /* Universal focus ring */
+
+  /* Accessible Semantic Status Colors (WCAG AA Compliant) */
+  --civic-status-reported-bg:   #eff6ff;
+  --civic-status-reported-text: #1d4ed8;
+  --civic-status-reported-bd:   #bfdbfe;
+
+  --civic-status-progress-bg:   #fffbeb;
+  --civic-status-progress-text: #b45309;
+  --civic-status-progress-bd:   #fde68a;
+
+  --civic-status-resolved-bg:   #f0fdf4;
+  --civic-status-resolved-text: #15803d;
+  --civic-status-resolved-bd:   #bbf7d0;
+
+  /* Admin-Specific Review & Flagged Semantic Tokens */
+  --civic-status-review-bg:     #fef3c7;
+  --civic-status-review-text:   #92400e;
+  --civic-status-review-bd:     #fcd34d;
+
+  --civic-danger-bg:            #fef2f2;
+  --civic-danger-text:          #b91c1c;
+  --civic-danger-bd:            #fecaca;
+
+  /* Slate Palette Scale */
+  --civic-slate-50:  #f8fafc;
+  --civic-slate-100: #f1f5f9;
+  --civic-slate-200: #e2e8f0;
+  --civic-slate-300: #cbd5e1;
+  --civic-slate-400: #94a3b8;
+  --civic-slate-500: #64748b;
+  --civic-slate-600: #475569;
+  --civic-slate-700: #334155;
+  --civic-slate-800: #1e293b;
+  --civic-slate-900: #0f172a;
+
+  /* Typography & Layout Tokens */
+  --civic-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --civic-radius-sm: 6px;
+  --civic-radius:    8px;
+  --civic-radius-md: 8px;
+  --civic-radius-lg: 12px;
+  --civic-transition: 0.15s ease;
+  --civic-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --civic-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --civic-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -6,13 +75,34 @@
 html, body {
   margin: 0;
   padding: 0;
-  background-color: #0b1120;
-  color: #f8fafc;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--civic-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--civic-canvas);
+  color: var(--civic-text);
+  line-height: 1.5;
 }
 
-input, button, select, textarea {
+/* Accessible universal focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--civic-focus);
+  outline-offset: 2px;
+}
+
+button, input, select, textarea {
   font-family: inherit;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+/* Accessible reduced-motion handling */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

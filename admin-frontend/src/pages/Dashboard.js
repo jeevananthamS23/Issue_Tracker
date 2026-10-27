@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import useModalA11y from "../hooks/useModalA11y";
 import { useAdminAuth } from "../context/AdminAuthContext";
 import API, {
   getImageUrl,
@@ -31,7 +32,9 @@ import {
   Flame,
   Bell,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  History,
+  ArrowRight
 } from "lucide-react";
 import HotspotsSection from "../components/HotspotsSection";
 import NotificationCenter from "../components/NotificationCenter";
@@ -216,11 +219,14 @@ const Dashboard = () => {
   const [issueToDelete, setIssueToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Notification unread count and hotspot target state
+  // Notification unread count with visibility guard and overlap protection (Phase 2.4)
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [targetHotspotId, setTargetHotspotId] = useState(null);
+  const isFetchingUnreadRef = useRef(false);
 
   const fetchUnreadCount = useCallback(async () => {
+    if (isFetchingUnreadRef.current) return;
+    isFetchingUnreadRef.current = true;
     try {
       const res = await fetchUnreadNotificationCount();
       if (typeof res.data?.unreadCount === "number") {
@@ -228,16 +234,38 @@ const Dashboard = () => {
       }
     } catch (err) {
       console.error("Error fetching unread notification count:", err);
+    } finally {
+      isFetchingUnreadRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    fetchUnreadCount();
-    // Periodically poll unread count every 30 seconds while dashboard is open
+    // Initial fetch if tab is active/visible
+    if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+      fetchUnreadCount();
+    }
+
+    // Periodically poll unread count every 30 seconds only while document is visible
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return; // Avoid routine polling while hidden
+      }
       fetchUnreadCount();
     }, 30000);
-    return () => clearInterval(interval);
+
+    // Immediate refresh when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchUnreadCount();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [fetchUnreadCount]);
 
   const handleNavigateToHotspot = (hotspotId) => {
@@ -514,6 +542,51 @@ const Dashboard = () => {
       setSubmittingReview(false);
     }
   };
+
+  // Modal Accessibility References & Hooks (Phase 2.3)
+  const detailModalRef = useRef(null);
+  const detailCloseBtnRef = useRef(null);
+
+  const comparisonModalRef = useRef(null);
+  const comparisonCloseBtnRef = useRef(null);
+
+  const confirmDialogRef = useRef(null);
+  const confirmCancelBtnRef = useRef(null);
+
+  const deleteModalRef = useRef(null);
+  const deleteCancelBtnRef = useRef(null);
+
+  useModalA11y({
+    isOpen: !!selectedIssue,
+    onClose: handleCloseDetail,
+    modalRef: detailModalRef,
+    initialFocusRef: detailCloseBtnRef,
+    isTopmost: !comparisonIssue && !issueToDelete
+  });
+
+  useModalA11y({
+    isOpen: !!comparisonIssue,
+    onClose: handleCloseComparison,
+    modalRef: comparisonModalRef,
+    initialFocusRef: comparisonCloseBtnRef,
+    isTopmost: !confirmDialog && !issueToDelete
+  });
+
+  useModalA11y({
+    isOpen: !!confirmDialog,
+    onClose: handleCancelConfirm,
+    modalRef: confirmDialogRef,
+    initialFocusRef: confirmCancelBtnRef,
+    isTopmost: !issueToDelete
+  });
+
+  useModalA11y({
+    isOpen: !!issueToDelete,
+    onClose: () => setIssueToDelete(null),
+    modalRef: deleteModalRef,
+    initialFocusRef: deleteCancelBtnRef,
+    isTopmost: true
+  });
 
   // Filter issues based on tabs, dropdowns, and search query
   const filteredIssues = issues.filter((issue) => {
@@ -1236,6 +1309,8 @@ const Dashboard = () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-comparison-title"
+            tabIndex={-1}
+            ref={comparisonModalRef}
           >
             {/* Modal Header */}
             <div className="comparison-header">
@@ -1251,6 +1326,7 @@ const Dashboard = () => {
                 </div>
               </div>
               <button
+                ref={comparisonCloseBtnRef}
                 className="btn-modal-close"
                 onClick={handleCloseComparison}
                 aria-label="Close comparison view"
@@ -1592,11 +1668,18 @@ const Dashboard = () => {
 
                 {/* In-modal confirmation prompt if clicked */}
                 {confirmDialog ? (
-                  <div className="confirm-resolution-box" role="alertdialog">
+                  <div
+                    ref={confirmDialogRef}
+                    tabIndex={-1}
+                    className="confirm-resolution-box"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="confirm-box-title"
+                  >
                     <div className="confirm-text-group">
                       <AlertTriangle size={24} className="confirm-icon-warn" />
                       <div>
-                        <h4 className="confirm-box-title">
+                        <h4 id="confirm-box-title" className="confirm-box-title">
                           {confirmDialog.action === "confirm_duplicate"
                             ? "Confirm Issue as Duplicate?"
                             : "Dismiss Duplicate Flag & Mark as Unique?"}
@@ -1611,6 +1694,7 @@ const Dashboard = () => {
 
                     <div className="confirm-buttons-row">
                       <button
+                        ref={confirmCancelBtnRef}
                         className="btn-cancel-dialog"
                         onClick={handleCancelConfirm}
                         disabled={submittingReview}
@@ -1691,6 +1775,8 @@ const Dashboard = () => {
       {selectedIssue && (
         <div className="modal-overlay" onClick={handleCloseDetail}>
           <div
+            ref={detailModalRef}
+            tabIndex={-1}
             className="detail-modal"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
@@ -1705,6 +1791,7 @@ const Dashboard = () => {
                 </h2>
               </div>
               <button
+                ref={detailCloseBtnRef}
                 className="btn-modal-close"
                 onClick={handleCloseDetail}
                 aria-label="Close modal"
@@ -1870,6 +1957,109 @@ const Dashboard = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* Status History Audit Trail Timeline (Phase 2.3) */}
+                  <div className="info-block status-history-section" data-testid="status-history-section">
+                    <div className="history-header-row">
+                      <label className="history-section-label">
+                        <History size={15} className="history-section-icon" /> Status History Audit Trail
+                      </label>
+                      {selectedIssue.statusHistory && selectedIssue.statusHistory.length > 0 && (
+                        <span className="history-count-badge" data-testid="status-history-count">
+                          {selectedIssue.statusHistory.length}{" "}
+                          {selectedIssue.statusHistory.length === 1 ? "transition" : "transitions"}
+                        </span>
+                      )}
+                    </div>
+
+                    {!selectedIssue.statusHistory || selectedIssue.statusHistory.length === 0 ? (
+                      <div className="status-history-empty" data-testid="status-history-empty">
+                        <Clock size={16} className="empty-clock-icon" />
+                        <p>
+                          No status transitions recorded yet. Initial issue status remains{" "}
+                          <strong>'{selectedIssue.status || "reported"}'</strong> as submitted.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="status-timeline" data-testid="status-timeline" role="list">
+                        {[...selectedIssue.statusHistory]
+                          .sort((a, b) => {
+                            const tA = new Date(a.changedAt || a.timestamp || a.createdAt || 0).getTime();
+                            const tB = new Date(b.changedAt || b.timestamp || b.createdAt || 0).getTime();
+                            return tA - tB;
+                          })
+                          .map((entry, idx, sortedArr) => {
+                            const isLatest = idx === sortedArr.length - 1;
+                            const fromStatus = entry.from || entry.previousStatus || "unknown";
+                            const toStatus = entry.to || entry.newStatus || "unknown";
+                            const dateStr =
+                              entry.changedAt || entry.timestamp || entry.createdAt
+                                ? new Date(entry.changedAt || entry.timestamp || entry.createdAt).toLocaleString()
+                                : null;
+                            const adminName =
+                              entry.changedBy?.fullName ||
+                              entry.changedBy?.email ||
+                              (typeof entry.changedBy === "string" ? entry.changedBy : null) ||
+                              entry.adminId ||
+                              null;
+                            const reasonNote = entry.reason || entry.notes;
+
+                            return (
+                              <div
+                                key={entry._id || `sh-${idx}`}
+                                className={`timeline-entry ${isLatest ? "latest-transition" : ""}`}
+                                role="listitem"
+                                data-testid={`status-history-entry-${idx}`}
+                              >
+                                <div className="timeline-marker">
+                                  <div className={`timeline-bullet ${isLatest ? "bullet-latest" : ""}`} />
+                                  {idx < sortedArr.length - 1 && <div className="timeline-line" />}
+                                </div>
+                                <div className="timeline-content">
+                                  <div className="timeline-header-line">
+                                    <div className="timeline-transition">
+                                      <span className={`status-pill-sm status-${fromStatus}`}>
+                                        {fromStatus.replace("-", " ")}
+                                      </span>
+                                      <ArrowRight size={13} className="timeline-arrow" />
+                                      <span className={`status-pill-sm status-${toStatus}`}>
+                                        {toStatus.replace("-", " ")}
+                                      </span>
+                                    </div>
+                                    {isLatest && (
+                                      <span
+                                        className="badge-latest-transition"
+                                        data-testid="badge-latest-transition"
+                                      >
+                                        Latest Transition
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="timeline-meta-row">
+                                    {dateStr && (
+                                      <span className="timeline-date">
+                                        <Calendar size={12} /> {dateStr}
+                                      </span>
+                                    )}
+                                    {adminName && (
+                                      <span className="timeline-admin">
+                                        <User size={12} /> {adminName}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {reasonNote && (
+                                    <div className="timeline-reason">
+                                      <span className="reason-label">Notes:</span>{" "}
+                                      <span className="reason-text">{reasonNote}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right side: Management & Triage Form */}
@@ -2014,9 +2204,12 @@ const Dashboard = () => {
       {issueToDelete && (
         <div className="modal-overlay" onClick={() => setIssueToDelete(null)}>
           <div
+            ref={deleteModalRef}
+            tabIndex={-1}
             className="confirm-modal"
             onClick={(e) => e.stopPropagation()}
             role="alertdialog"
+            aria-modal="true"
             aria-labelledby="confirm-delete-title"
           >
             <div className="confirm-icon-wrapper">
@@ -2030,6 +2223,7 @@ const Dashboard = () => {
             </p>
             <div className="confirm-actions">
               <button
+                ref={deleteCancelBtnRef}
                 className="btn-cancel"
                 onClick={() => setIssueToDelete(null)}
                 disabled={deleting}
