@@ -49,11 +49,61 @@ const INITIAL_ISSUE_STATE = Object.freeze({
   image: null,
 });
 
-// Map click handler component
+// Strict coordinate validator ensuring [lat, lng] is valid, finite and within global bounds
+const isValidLatLng = (pos) => {
+  return (
+    Array.isArray(pos) &&
+    pos.length === 2 &&
+    typeof pos[0] === "number" &&
+    typeof pos[1] === "number" &&
+    Number.isFinite(pos[0]) &&
+    Number.isFinite(pos[1]) &&
+    !Number.isNaN(pos[0]) &&
+    !Number.isNaN(pos[1]) &&
+    pos[0] >= -90 &&
+    pos[0] <= 90 &&
+    pos[1] >= -180 &&
+    pos[1] <= 180
+  );
+};
+
+// Map container size invalidator to fix collapsed/small map when shown after step-hidden
+const MapResizeHandler = ({ active }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (active && map) {
+      try {
+        if (typeof map.invalidateSize === 'function') { map.invalidateSize(); }
+      } catch (_) {}
+      const timer = setTimeout(() => {
+        try {
+          if (typeof map.invalidateSize === 'function') { map.invalidateSize(); }
+        } catch (_) {}
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [active, map]);
+  return null;
+};
+
+// Map click handler component with strict coordinate validation
 const AddMarkerOnClick = ({ onLocationSelect }) => {
   useMapEvents({
     click: (e) => {
-      onLocationSelect([e.latlng.lat, e.latlng.lng], "manual");
+      if (
+        e &&
+        e.latlng &&
+        Number.isFinite(e.latlng.lat) &&
+        Number.isFinite(e.latlng.lng) &&
+        !Number.isNaN(e.latlng.lat) &&
+        !Number.isNaN(e.latlng.lng) &&
+        e.latlng.lat >= -90 &&
+        e.latlng.lat <= 90 &&
+        e.latlng.lng >= -180 &&
+        e.latlng.lng <= 180
+      ) {
+        onLocationSelect([e.latlng.lat, e.latlng.lng], "manual");
+      }
     },
   });
   return null;
@@ -63,8 +113,13 @@ const AddMarkerOnClick = ({ onLocationSelect }) => {
 const MapViewUpdater = ({ position }) => {
   const map = useMap();
   useEffect(() => {
-    if (position && typeof position[0] === "number" && typeof position[1] === "number") {
-      map.flyTo(position, 15, { animate: true, duration: 1.2 });
+    if (isValidLatLng(position) && map) {
+      try {
+        if (typeof map.invalidateSize === 'function') { map.invalidateSize(); }
+        if (typeof map.flyTo === 'function') { map.flyTo(position, 15, { animate: true, duration: 1.2 }); }
+      } catch (err) {
+        console.warn("Map navigation notice:", err);
+      }
     }
   }, [position, map]);
   return null;
@@ -116,6 +171,34 @@ const Dashboard = () => {
   const [ocrCandidate, setOcrCandidate] = useState(null);
   const [candidateConflict, setCandidateConflict] = useState(null); // { exif, ocr, distanceMeters }
   const [isReporting, setIsReporting] = useState(false);
+  const [locatingUser, setLocatingUser] = useState(false);
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser.");
+      return;
+    }
+    setLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocatingUser(false);
+        const { latitude, longitude } = pos.coords;
+        if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+          handleLocationSelect([latitude, longitude], "gps");
+          setLocationFeedback({
+            type: "exif",
+            message: `📍 Current device GPS detected: [${latitude.toFixed(5)}, ${longitude.toFixed(5)}]. Map pin updated.`
+          });
+          toast.success("📍 Placed pin at your current GPS location.");
+        }
+      },
+      (err) => {
+        setLocatingUser(false);
+        toast.warn("Could not get current location: " + (err.message || "Permission denied"));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
   const [newIssue, setNewIssue] = useState({ ...INITIAL_ISSUE_STATE });
   const [imagePreview, setImagePreview] = useState(null);
   const imagePreviewRef = useRef(null);
@@ -1001,7 +1084,19 @@ const Dashboard = () => {
               )}
 
               <div className="map-instructions">
-                <p>Select the issue location on the map (or upload a geotagged photo):</p>
+                <div className="map-instructions-header">
+                  <p>Select the issue location on the map (or upload a geotagged photo):</p>
+                  <button
+                    type="button"
+                    className="use-gps-btn"
+                    onClick={handleUseCurrentLocation}
+                    disabled={locatingUser}
+                    data-testid="use-current-gps-btn"
+                  >
+                    <MapPin size={15} />
+                    {locatingUser ? "Detecting GPS..." : "Detect My Current GPS Location"}
+                  </button>
+                </div>
                 {exifExtracting && (
                   <div className="location-banner analyzing" data-testid="exif-analyzing">
                     <span>🔍 Reading photo metadata for EXIF GPS coordinates...</span>
@@ -1044,10 +1139,11 @@ const Dashboard = () => {
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
                   
+                  <MapResizeHandler active={wizardStep === 2} />
                   <AddMarkerOnClick onLocationSelect={handleLocationSelect} />
                   <MapViewUpdater position={markerPosition} />
                   
-                  {markerPosition && (
+                  {isValidLatLng(markerPosition) && (
                     <Marker position={markerPosition}>
                       <Popup>
                         <div>
@@ -1414,12 +1510,31 @@ const Dashboard = () => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
               
-              {userIssues.map((issue) => (
-                <Marker 
-                  key={issue._id} 
-                  position={[issue.location.lat, issue.location.lng]}
-                  icon={getStatusIcon(issue.status)}
-                >
+              <MapResizeHandler active={true} />
+              {userIssues
+                .filter((issue) => {
+                  if (!issue || !issue.location) return false;
+                  let lat = issue.location.lat;
+                  let lng = issue.location.lng;
+                  if (lat === undefined && Array.isArray(issue.location.coordinates) && issue.location.coordinates.length >= 2) {
+                    lng = issue.location.coordinates[0];
+                    lat = issue.location.coordinates[1];
+                  }
+                  return typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng);
+                })
+                .map((issue) => {
+                  let lat = issue.location.lat;
+                  let lng = issue.location.lng;
+                  if (lat === undefined && Array.isArray(issue.location.coordinates) && issue.location.coordinates.length >= 2) {
+                    lng = issue.location.coordinates[0];
+                    lat = issue.location.coordinates[1];
+                  }
+                  return (
+                    <Marker 
+                      key={issue._id} 
+                      position={[lat, lng]}
+                      icon={getStatusIcon(issue.status)}
+                    >
                   <Popup>
                     <div className="issue-popup">
                       <h3>{issue.type}</h3>
@@ -1450,7 +1565,8 @@ const Dashboard = () => {
                     </div>
                   </Popup>
                 </Marker>
-              ))}
+                  );
+                })}
             </MapContainer>
           </div>
         </div>

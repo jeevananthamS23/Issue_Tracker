@@ -23,13 +23,21 @@ L.Marker.prototype.options.icon = defaultIcon;
 const MapView = ({ center, issues, selectedIssue, setSelectedIssue, getStatusIcon }) => {
   const map = useMap();
   
-  // Center map on selected issue
+  // Center map on selected issue safely supporting both GeoJSON and {lat, lng}
   useEffect(() => {
-    if (selectedIssue) {
-      map.setView(
-        [selectedIssue.location.lat, selectedIssue.location.lng],
-        16
-      );
+    if (selectedIssue && selectedIssue.location) {
+      let lat = selectedIssue.location.lat;
+      let lng = selectedIssue.location.lng;
+      if (lat === undefined && Array.isArray(selectedIssue.location.coordinates) && selectedIssue.location.coordinates.length >= 2) {
+        lng = selectedIssue.location.coordinates[0];
+        lat = selectedIssue.location.coordinates[1];
+      }
+      if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
+        try {
+          map.invalidateSize();
+          map.setView([lat, lng], 16);
+        } catch (_) {}
+      }
     }
   }, [selectedIssue, map]);
 
@@ -40,15 +48,33 @@ const MapView = ({ center, issues, selectedIssue, setSelectedIssue, getStatusIco
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
       
-      {issues.map((issue) => (
-        <Marker 
-          key={issue._id} 
-          position={[issue.location.lat, issue.location.lng]}
-          icon={getStatusIcon(issue.status)}
-          eventHandlers={{
-            click: () => setSelectedIssue(issue),
-          }}
-        >
+      {issues
+        .filter((issue) => {
+          if (!issue || !issue.location) return false;
+          let lat = issue.location.lat;
+          let lng = issue.location.lng;
+          if (lat === undefined && Array.isArray(issue.location.coordinates) && issue.location.coordinates.length >= 2) {
+            lng = issue.location.coordinates[0];
+            lat = issue.location.coordinates[1];
+          }
+          return typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng);
+        })
+        .map((issue) => {
+          let lat = issue.location.lat;
+          let lng = issue.location.lng;
+          if (lat === undefined && Array.isArray(issue.location.coordinates) && issue.location.coordinates.length >= 2) {
+            lng = issue.location.coordinates[0];
+            lat = issue.location.coordinates[1];
+          }
+          return (
+            <Marker 
+              key={issue._id} 
+              position={[lat, lng]}
+              icon={getStatusIcon(issue.status)}
+              eventHandlers={{
+                click: () => setSelectedIssue(issue),
+              }}
+            >
           <Popup>
             <div className="issue-popup">
               <h3>{issue.type}</h3>

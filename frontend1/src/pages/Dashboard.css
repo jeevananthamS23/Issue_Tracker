@@ -1690,3 +1690,54 @@
     margin: 0 2px;
   }
 }
+/* Robust map container visibility and sizing */
+.map-container {
+  height: 380px !important;
+  min-height: 350px !important;
+  width: 100% !important;
+}
+
+.map-container .leaflet-container {
+  height: 100% !important;
+  min-height: 350px !important;
+  width: 100% !important;
+}
+
+.map-instructions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.map-instructions-header p {
+  margin: 0;
+}
+
+.use-gps-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.use-gps-btn:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.use-gps-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
